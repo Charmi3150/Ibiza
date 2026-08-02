@@ -37,6 +37,8 @@
     --shadow:0 8px 24px -12px rgba(27,42,58,.35);
   }
   *{box-sizing:border-box;}
+  html, body{ overflow-x:hidden; width:100%; }
+  input, select, textarea{ max-width:100%; }
   html,body{height:100%;}
   body{
     margin:0;
@@ -142,11 +144,11 @@
   /* category tabs (per-category "blad") */
   .cat-tabs{ display:flex; gap:2px; margin:-4px -4px 10px; border-bottom:1px solid var(--line); }
   .cat-tab{
-    flex:1; text-align:center; padding:8px 4px 9px; font-size:12px; font-weight:600;
+    flex:1; min-width:0; text-align:center; padding:8px 3px 9px; font-size:11.5px; font-weight:600;
     color:var(--ink-soft); cursor:pointer; border-bottom:2px solid transparent;
-    white-space:nowrap; display:flex; flex-direction:column; align-items:center; gap:4px;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
   }
-  .cat-tab .dot{ width:8px; height:8px; border-radius:50%; }
+  .cat-tab .dot{ width:7px; height:7px; border-radius:50%; display:inline-block; margin-right:4px; }
   .cat-tab.active{ color:var(--ink); border-bottom-color:currentColor; }
 
   /* filters */
@@ -228,6 +230,10 @@
     font-size:13.5px; width:100%; background:#fff;
   }
   .add-form textarea{ resize:vertical; min-height:44px; }
+  .time-row{ display:flex; align-items:center; gap:6px; }
+  .time-row select{ width:auto; flex:0 0 72px; padding:8px 6px; text-align:center; }
+  .time-row .colon{ color:var(--ink-soft); font-weight:600; }
+  .time-row .time-label{ display:block; font-size:11px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.06em; margin-bottom:4px; width:100%; }
   .btn{
     padding:9px 14px; border-radius:8px; border:none; cursor:pointer;
     font-family:'Inter',sans-serif; font-weight:600; font-size:13.5px;
@@ -345,9 +351,12 @@
         <input type="text" id="placeName" placeholder="Naam van de plek">
         <select id="placeCategory"></select>
         <textarea id="placeNotes" placeholder="Notities (bv. reserveren nodig, parkeertip, beste tijdstip…)"></textarea>
-        <label style="display:block; font-size:11px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.06em;">Tijd (optioneel, bv. voor reservaties)
-          <input type="time" id="placeTime" style="margin-top:4px;">
-        </label>
+        <label style="display:block; font-size:11px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.06em;">Tijdstip (optioneel, bv. voor reservaties)</label>
+        <div class="time-row">
+          <select id="placeTimeHour"></select>
+          <span class="colon">:</span>
+          <select id="placeTimeMin"></select>
+        </div>
         <button class="btn btn-primary btn-block" id="addPlaceBtn">Plek opslaan</button>
       </div>
     </div>
@@ -644,10 +653,31 @@ Object.entries(CATEGORIES).forEach(([key, val]) => {
   catSelect.appendChild(opt);
 });
 
+/* Compacte uur/minuut-kiezers i.p.v. het native type="time"-veld: dat
+   negeert op iOS soms de opgegeven breedte en duwt dan de hele pagina
+   opzij (horizontaal scrollen). */
+function hourOptionsHtml(selected){
+  let html = '<option value="">--</option>';
+  for(let h=0; h<24; h++){
+    const v = String(h).padStart(2,'0');
+    html += `<option value="${v}" ${selected===v?'selected':''}>${v}</option>`;
+  }
+  return html;
+}
+function minOptionsHtml(selected){
+  let html = '<option value="">--</option>';
+  ['00','15','30','45'].forEach(m => { html += `<option value="${m}" ${selected===m?'selected':''}>${m}</option>`; });
+  return html;
+}
+document.getElementById('placeTimeHour').innerHTML = hourOptionsHtml('');
+document.getElementById('placeTimeMin').innerHTML = minOptionsHtml('');
+
 document.getElementById('addPlaceBtn').addEventListener('click', async () => {
   const name = document.getElementById('placeName').value.trim();
   const notes = document.getElementById('placeNotes').value.trim();
-  const time = document.getElementById('placeTime').value;
+  const hour = document.getElementById('placeTimeHour').value;
+  const min = document.getElementById('placeTimeMin').value;
+  const time = (hour && min) ? `${hour}:${min}` : '';
   const category = catSelect.value;
 
   if(!name){ showToast('Geef de plek een naam.', true); return; }
@@ -673,7 +703,8 @@ document.getElementById('addPlaceBtn').addEventListener('click', async () => {
   pendingCoords = null;
   document.getElementById('placeName').value = '';
   document.getElementById('placeNotes').value = '';
-  document.getElementById('placeTime').value = '';
+  document.getElementById('placeTimeHour').value = '';
+  document.getElementById('placeTimeMin').value = '';
   renderAll();
 });
 
@@ -794,11 +825,17 @@ function renderPlaceList(){
       `<option value="${key}" ${p.category===key?'selected':''}>${val.label}</option>`
     );
 
+    const [curHour, curMin] = (p.time || '').split(':');
     const bodyHtml = isEditing ? `
       <div class="edit-fields">
         <input type="text" class="edit-name" value="${escapeAttr(p.name)}" placeholder="Naam">
         <textarea class="edit-notes" placeholder="Notities">${escapeHtml(p.notes)}</textarea>
-        <input type="time" class="edit-time" value="${p.time || ''}">
+        <span class="time-label">Tijdstip (optioneel)</span>
+        <div class="time-row">
+          <select class="edit-hour">${hourOptionsHtml(curHour || '')}</select>
+          <span class="colon">:</span>
+          <select class="edit-min">${minOptionsHtml(curMin || '')}</select>
+        </div>
         <div class="edit-actions">
           <button class="btn btn-primary btn-sm" data-save="${p.id}" type="button">Opslaan</button>
           <button class="btn btn-ghost btn-sm" data-canceledit="${p.id}" type="button">Annuleer</button>
@@ -855,7 +892,9 @@ function renderPlaceList(){
     const card = btn.closest('.place-card');
     const name = card.querySelector('.edit-name').value.trim();
     const notes = card.querySelector('.edit-notes').value.trim();
-    const time = card.querySelector('.edit-time').value;
+    const hour = card.querySelector('.edit-hour').value;
+    const min = card.querySelector('.edit-min').value;
+    const time = (hour && min) ? `${hour}:${min}` : '';
     if(!name){ showToast('Geef de plek een naam.', true); return; }
     const p = state.places.find(x => x.id === id);
     const prev = { name: p.name, notes: p.notes, time: p.time };
