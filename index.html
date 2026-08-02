@@ -196,6 +196,11 @@
     display:inline-block; font-family:'IBM Plex Mono',monospace; font-size:11.5px;
     color:var(--clay); background:#FBE0DC; padding:2px 8px; border-radius:999px; margin:4px 0 8px;
   }
+  .place-card .website-link{
+    display:inline-block; font-size:12.5px; font-weight:600; color:var(--mauve);
+    text-decoration:none; margin:2px 0 8px;
+  }
+  .place-card .website-link:hover{ text-decoration:underline; }
   .place-card .meta{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
   .place-card select{
     font-size:12px; border:1px solid var(--line); border-radius:6px; padding:3px 6px;
@@ -351,6 +356,7 @@
         <input type="text" id="placeName" placeholder="Naam van de plek">
         <select id="placeCategory"></select>
         <textarea id="placeNotes" placeholder="Notities (bv. reserveren nodig, parkeertip, beste tijdstip…)"></textarea>
+        <input type="url" id="placeWebsite" placeholder="Website (optioneel, bv. https://...)">
         <label style="display:block; font-size:11px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.06em;">Tijdstip (optioneel, bv. voor reservaties)</label>
         <div class="time-row">
           <select id="placeTimeHour"></select>
@@ -480,7 +486,8 @@ function mapRow(row){
     id: row.id, name: row.name, category: row.category,
     notes: row.notes || '', lat: row.lat, lng: row.lng,
     day: row.day, order: row.order, favorite: row.favorite,
-    time: row.reservation_time || ''
+    time: row.reservation_time || '',
+    website: row.website || ''
   };
 }
 async function fetchAllFromSupabase(){
@@ -672,9 +679,16 @@ function minOptionsHtml(selected){
 document.getElementById('placeTimeHour').innerHTML = hourOptionsHtml('');
 document.getElementById('placeTimeMin').innerHTML = minOptionsHtml('');
 
+function normalizeUrl(str){
+  const trimmed = str.trim();
+  if(!trimmed) return '';
+  return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+}
+
 document.getElementById('addPlaceBtn').addEventListener('click', async () => {
   const name = document.getElementById('placeName').value.trim();
   const notes = document.getElementById('placeNotes').value.trim();
+  const website = normalizeUrl(document.getElementById('placeWebsite').value);
   const hour = document.getElementById('placeTimeHour').value;
   const min = document.getElementById('placeTimeMin').value;
   const time = (hour && min) ? `${hour}:${min}` : '';
@@ -689,6 +703,7 @@ document.getElementById('addPlaceBtn').addEventListener('click', async () => {
   const { data, error } = await sb.from('ibiza_places').insert({
     name, notes, category,
     reservation_time: time || null,
+    website: website || null,
     lat: pendingCoords.lat, lng: pendingCoords.lng,
     day: -1, order: 0, favorite: false
   }).select().single();
@@ -703,6 +718,7 @@ document.getElementById('addPlaceBtn').addEventListener('click', async () => {
   pendingCoords = null;
   document.getElementById('placeName').value = '';
   document.getElementById('placeNotes').value = '';
+  document.getElementById('placeWebsite').value = '';
   document.getElementById('placeTimeHour').value = '';
   document.getElementById('placeTimeMin').value = '';
   renderAll();
@@ -830,6 +846,7 @@ function renderPlaceList(){
       <div class="edit-fields">
         <input type="text" class="edit-name" value="${escapeAttr(p.name)}" placeholder="Naam">
         <textarea class="edit-notes" placeholder="Notities">${escapeHtml(p.notes)}</textarea>
+        <input type="url" class="edit-website" value="${escapeAttr(p.website)}" placeholder="Website (optioneel, bv. https://...)">
         <span class="time-label">Tijdstip (optioneel)</span>
         <div class="time-row">
           <select class="edit-hour">${hourOptionsHtml(curHour || '')}</select>
@@ -845,6 +862,7 @@ function renderPlaceList(){
       <h3>${escapeHtml(p.name)}</h3>
       ${p.notes ? `<div class="notes">${escapeHtml(p.notes)}</div>` : ''}
       ${p.time ? `<div class="time-badge">🕒 ${escapeHtml(p.time)}</div>` : ''}
+      ${p.website ? `<a class="website-link" href="${escapeAttr(p.website)}" target="_blank" rel="noopener">🔗 Website</a>` : ''}
     `;
 
     card.innerHTML = `
@@ -871,7 +889,7 @@ function renderPlaceList(){
       </div>
     `;
     card.addEventListener('click', (e) => {
-      if(e.target.closest('button') || e.target.closest('select') || e.target.closest('input') || e.target.closest('textarea')) return;
+      if(e.target.closest('button') || e.target.closest('select') || e.target.closest('input') || e.target.closest('textarea') || e.target.closest('a')) return;
       map.setView([p.lat, p.lng], 16);
     });
     el.appendChild(card);
@@ -893,16 +911,17 @@ function renderPlaceList(){
     const card = btn.closest('.place-card');
     const name = card.querySelector('.edit-name').value.trim();
     const notes = card.querySelector('.edit-notes').value.trim();
+    const website = normalizeUrl(card.querySelector('.edit-website').value);
     const hour = card.querySelector('.edit-hour').value;
     const min = card.querySelector('.edit-min').value;
     const time = (hour && min) ? `${hour}:${min}` : '';
     if(!name){ showToast('Geef de plek een naam.', true); return; }
     const p = state.places.find(x => x.id === id);
-    const prev = { name: p.name, notes: p.notes, time: p.time };
-    p.name = name; p.notes = notes; p.time = time;
+    const prev = { name: p.name, notes: p.notes, time: p.time, website: p.website };
+    p.name = name; p.notes = notes; p.time = time; p.website = website;
     editingPlaceId = null;
     renderAll();
-    const { error } = await sb.from('ibiza_places').update({ name, notes, reservation_time: time || null }).eq('id', id);
+    const { error } = await sb.from('ibiza_places').update({ name, notes, reservation_time: time || null, website: website || null }).eq('id', id);
     if(error){
       Object.assign(p, prev);
       renderAll();
@@ -994,7 +1013,7 @@ function renderMarkers(){
   list.forEach((p, idx) => {
     const icon = state.activeDay > 0 ? numberedIcon(idx+1, p.category) : catIcon(p.category);
     const marker = L.marker([p.lat, p.lng], { icon }).addTo(markersLayer);
-    marker.bindPopup(`<h4>${escapeHtml(p.name)}</h4>${p.time ? `<div style="color:#EA564C;font-size:11px;font-weight:600;">🕒 ${escapeHtml(p.time)}</div>` : ''}${p.notes ? `<div>${escapeHtml(p.notes)}</div>` : ''}<div style="margin-top:4px;color:#888;font-size:11px;">${CATEGORIES[p.category].label}</div><a href="https://waze.com/ul?ll=${p.lat},${p.lng}&navigate=yes" target="_blank" rel="noopener" style="display:inline-block;margin-top:6px;font-size:12px;font-weight:600;color:#EA564C;">🧭 Navigeer in Waze</a>`);
+    marker.bindPopup(`<h4>${escapeHtml(p.name)}</h4>${p.time ? `<div style="color:#EA564C;font-size:11px;font-weight:600;">🕒 ${escapeHtml(p.time)}</div>` : ''}${p.notes ? `<div>${escapeHtml(p.notes)}</div>` : ''}<div style="margin-top:4px;color:#888;font-size:11px;">${CATEGORIES[p.category].label}</div>${p.website ? `<a href="${escapeAttr(p.website)}" target="_blank" rel="noopener" style="display:block;margin-top:4px;font-size:12px;font-weight:600;color:#C97B86;">🔗 Website</a>` : ''}<a href="https://waze.com/ul?ll=${p.lat},${p.lng}&navigate=yes" target="_blank" rel="noopener" style="display:inline-block;margin-top:6px;font-size:12px;font-weight:600;color:#EA564C;">🧭 Navigeer in Waze</a>`);
   });
   if(state.activeDay > 0 && list.length > 1){
     const line = L.polyline(list.map(p => [p.lat, p.lng]), { color: '#4A2224', weight: 2, dashArray: '6 6', opacity: .6 });
