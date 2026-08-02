@@ -220,7 +220,7 @@
   .flight-card .attachment-link:hover{ text-decoration:underline; }
   .flight-card .attachment-thumb{
     display:block; max-width:160px; max-height:110px; margin-top:8px;
-    border-radius:8px; border:1px solid var(--line); object-fit:cover;
+    border-radius:8px; border:1px solid var(--line); object-fit:cover; cursor:pointer;
   }
   .place-card .row1{ display:flex; justify-content:space-between; align-items:flex-start; gap:6px; }
   .place-card .row1 > div:last-child{ display:flex; gap:1px; flex-shrink:0; }
@@ -240,6 +240,11 @@
     text-decoration:none; margin:2px 0 8px;
   }
   .place-card .website-link:hover{ text-decoration:underline; }
+  .place-card .attachment-icon-btn{
+    display:inline-flex; align-items:center; justify-content:center;
+    width:26px; height:26px; border-radius:50%; border:1px solid var(--line);
+    background:#fff; cursor:pointer; font-size:13px; margin:2px 0 8px; vertical-align:middle;
+  }
   .place-card .meta{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
   .place-card select{
     font-size:12px; border:1px solid var(--line); border-radius:6px; padding:3px 6px;
@@ -349,6 +354,20 @@
   .confirm-box p{ margin:0 0 16px; font-size:14.5px; color:var(--ink); }
   .confirm-box .row{ display:flex; gap:10px; justify-content:center; }
 
+  .lightbox-overlay{
+    position:fixed; inset:0; z-index:7000; background:rgba(27,20,20,.9);
+    display:none; align-items:center; justify-content:center; padding:24px;
+  }
+  .lightbox-overlay.show{ display:flex; }
+  .lightbox-overlay img{
+    max-width:100%; max-height:100%; border-radius:10px; box-shadow:var(--shadow);
+  }
+  .lightbox-close{
+    position:absolute; top:20px; right:20px; width:36px; height:36px; border-radius:50%;
+    background:rgba(255,255,255,.15); color:#fff; border:none; font-size:20px; cursor:pointer;
+    display:flex; align-items:center; justify-content:center;
+  }
+
   .numbered-icon{
     background:var(--ink); color:var(--sun-soft); font-family:'IBM Plex Mono',monospace;
     font-weight:600; font-size:12px; width:26px; height:26px; border-radius:50% 50% 50% 0;
@@ -451,6 +470,9 @@
           <span class="colon">:</span>
           <select id="placeTimeMin"></select>
         </div>
+        <label style="display:block; font-size:11px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.06em; margin-top:8px;">Foto (optioneel)
+          <input type="file" id="placeAttachment" accept="image/*" style="margin-top:4px; display:block; font-size:12.5px;">
+        </label>
         <button class="btn btn-primary btn-block" id="addPlaceBtn">Plek opslaan</button>
       </div>
     </div>
@@ -497,6 +519,11 @@
   </div>
 </div>
 
+<div class="lightbox-overlay" id="lightboxOverlay">
+  <button class="lightbox-close" id="lightboxCloseBtn" type="button">✕</button>
+  <img id="lightboxImg" src="" alt="Bijlage">
+</div>
+
 <script>
 /* ============ Toast / confirm helpers ============
    iOS Safari silently drops alert()/confirm() when the site runs as a
@@ -530,6 +557,34 @@ function confirmDialog(message){
     okBtn.addEventListener('click', onOk);
     cancelBtn.addEventListener('click', onCancel);
   });
+}
+
+/* Safari blokkeert sinds enige tijd rechtstreekse navigatie naar data:-URLs
+   (leeg wit blad) — daarom tonen we bijlagen vergroot in een lightbox
+   binnen de pagina zelf, in plaats van ernaartoe te linken. */
+function openLightbox(dataUrl){
+  document.getElementById('lightboxImg').src = dataUrl;
+  document.getElementById('lightboxOverlay').classList.add('show');
+}
+function closeLightbox(){
+  document.getElementById('lightboxOverlay').classList.remove('show');
+  document.getElementById('lightboxImg').src = '';
+}
+document.getElementById('lightboxCloseBtn').addEventListener('click', closeLightbox);
+document.getElementById('lightboxOverlay').addEventListener('click', (e) => {
+  if(e.target.id === 'lightboxOverlay') closeLightbox();
+});
+
+/* Voor niet-afbeeldingen (bv. PDF's): zet de data:-URL om naar een blob:-URL
+   op het moment van klikken. blob:-URLs mogen wel rechtstreeks geopend
+   worden, data:-URLs niet meer. */
+function dataUrlToBlobUrl(dataUrl){
+  const [header, base64] = dataUrl.split(',');
+  const mime = (header.match(/data:(.*?);base64/) || [,'application/octet-stream'])[1];
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for(let i=0; i<binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return URL.createObjectURL(new Blob([bytes], { type: mime }));
 }
 
 if(typeof L === 'undefined'){
@@ -576,7 +631,9 @@ function mapRow(row){
     notes: row.notes || '', lat: row.lat, lng: row.lng,
     day: row.day, order: row.order, favorite: row.favorite,
     time: row.reservation_time || '',
-    website: row.website || ''
+    website: row.website || '',
+    attachmentName: row.attachment_name || '',
+    attachmentData: row.attachment_data || ''
   };
 }
 function mapFlightRow(row){
@@ -815,17 +872,33 @@ document.getElementById('addPlaceBtn').addEventListener('click', async () => {
   const min = document.getElementById('placeTimeMin').value;
   const time = (hour && min) ? `${hour}:${min}` : '';
   const category = catSelect.value;
+  const file = document.getElementById('placeAttachment').files[0];
 
   if(!name){ showToast('Geef de plek een naam.', true); return; }
   if(!pendingCoords){ showToast('Zoek een adres op of kies een locatie op de kaart.', true); return; }
+  if(file && file.size > 8 * 1024 * 1024){ showToast('Foto is groter dan 8MB, kies een kleiner bestand.', true); return; }
 
   const btn = document.getElementById('addPlaceBtn');
   btn.disabled = true; btn.textContent = 'Opslaan…';
+
+  let attachmentName = '', attachmentData = '';
+  if(file){
+    try{
+      attachmentData = await fileToDataURL(file);
+      attachmentName = file.name;
+    }catch(err){
+      btn.disabled = false; btn.textContent = 'Plek opslaan';
+      showToast('Kon de foto niet inlezen.', true);
+      return;
+    }
+  }
 
   const { data, error } = await sb.from('ibiza_places').insert({
     name, notes, category,
     reservation_time: time || null,
     website: website || null,
+    attachment_name: attachmentName || null,
+    attachment_data: attachmentData || null,
     lat: pendingCoords.lat, lng: pendingCoords.lng,
     day: -1, order: 0, favorite: false
   }).select().single();
@@ -843,6 +916,7 @@ document.getElementById('addPlaceBtn').addEventListener('click', async () => {
   document.getElementById('placeWebsite').value = '';
   document.getElementById('placeTimeHour').value = '';
   document.getElementById('placeTimeMin').value = '';
+  document.getElementById('placeAttachment').value = '';
   renderAll();
 });
 
@@ -1044,8 +1118,8 @@ function renderFlights(){
     const title = [f.flightNumber, f.airline].filter(Boolean).join(' · ') || 'Vlucht';
     const isImage = f.attachmentData.startsWith('data:image');
     const attachmentHtml = !f.attachmentData ? '' : isImage
-      ? `<a href="${f.attachmentData}" target="_blank" rel="noopener"><img class="attachment-thumb" src="${f.attachmentData}" alt="Bijlage"></a>`
-      : `<a class="attachment-link" href="${f.attachmentData}" target="_blank" rel="noopener">📎 ${escapeHtml(f.attachmentName || 'Bijlage')}</a>`;
+      ? `<img class="attachment-thumb" src="${f.attachmentData}" alt="Bijlage" data-openattachment="${f.id}">`
+      : `<button class="attachment-link" type="button" data-openattachment="${f.id}" style="background:none;border:none;cursor:pointer;">📎 ${escapeHtml(f.attachmentName || 'Bijlage')}</button>`;
     card.innerHTML = `
       <div class="row1">
         <div>
@@ -1062,6 +1136,16 @@ function renderFlights(){
     `;
     el.appendChild(card);
   });
+
+  el.querySelectorAll('[data-openattachment]').forEach(node => node.addEventListener('click', () => {
+    const f = state.flights.find(x => x.id === node.dataset.openattachment);
+    if(!f || !f.attachmentData) return;
+    if(f.attachmentData.startsWith('data:image')){
+      openLightbox(f.attachmentData);
+    } else {
+      window.open(dataUrlToBlobUrl(f.attachmentData), '_blank');
+    }
+  }));
 
   el.querySelectorAll('[data-editflight]').forEach(btn => btn.addEventListener('click', () => {
     const f = state.flights.find(x => x.id === btn.dataset.editflight);
@@ -1166,6 +1250,8 @@ function renderPlaceList(){
           <span class="colon">:</span>
           <select class="edit-min">${minOptionsHtml(curMin || '')}</select>
         </div>
+        <span class="time-label" style="margin-top:6px;">Foto (optioneel)${p.attachmentData ? ' — kies een nieuw bestand om te vervangen' : ''}</span>
+        <input type="file" class="edit-attachment" accept="image/*">
         <div class="edit-actions">
           <button class="btn btn-primary btn-sm" data-save="${p.id}" type="button">Opslaan</button>
           <button class="btn btn-ghost btn-sm" data-canceledit="${p.id}" type="button">Annuleer</button>
@@ -1176,6 +1262,7 @@ function renderPlaceList(){
       ${p.notes ? `<div class="notes">${escapeHtml(p.notes)}</div>` : ''}
       ${p.time ? `<div class="time-badge">🕒 ${escapeHtml(p.time)}</div>` : ''}
       ${p.website ? `<a class="website-link" href="${escapeAttr(p.website)}" target="_blank" rel="noopener">🔗 Website</a>` : ''}
+      ${p.attachmentData ? `<button class="attachment-icon-btn" type="button" data-openplaceattachment="${p.id}" title="Foto bekijken">📎</button>` : ''}
     `;
 
     card.innerHTML = `
@@ -1208,6 +1295,16 @@ function renderPlaceList(){
     el.appendChild(card);
   });
 
+  el.querySelectorAll('[data-openplaceattachment]').forEach(btn => btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const p = state.places.find(x => x.id === btn.dataset.openplaceattachment);
+    if(!p || !p.attachmentData) return;
+    if(p.attachmentData.startsWith('data:image')){
+      openLightbox(p.attachmentData);
+    } else {
+      window.open(dataUrlToBlobUrl(p.attachmentData), '_blank');
+    }
+  }));
   el.querySelectorAll('[data-edit]').forEach(btn => btn.addEventListener('click', (e) => {
     e.stopPropagation();
     editingPlaceId = btn.dataset.edit;
@@ -1228,13 +1325,31 @@ function renderPlaceList(){
     const hour = card.querySelector('.edit-hour').value;
     const min = card.querySelector('.edit-min').value;
     const time = (hour && min) ? `${hour}:${min}` : '';
+    const file = card.querySelector('.edit-attachment').files[0];
     if(!name){ showToast('Geef de plek een naam.', true); return; }
+    if(file && file.size > 8 * 1024 * 1024){ showToast('Foto is groter dan 8MB, kies een kleiner bestand.', true); return; }
+
     const p = state.places.find(x => x.id === id);
-    const prev = { name: p.name, notes: p.notes, time: p.time, website: p.website };
+    let attachmentName = p.attachmentName, attachmentData = p.attachmentData;
+    if(file){
+      try{
+        attachmentData = await fileToDataURL(file);
+        attachmentName = file.name;
+      }catch(err){
+        showToast('Kon de foto niet inlezen.', true);
+        return;
+      }
+    }
+
+    const prev = { name: p.name, notes: p.notes, time: p.time, website: p.website, attachmentName: p.attachmentName, attachmentData: p.attachmentData };
     p.name = name; p.notes = notes; p.time = time; p.website = website;
+    p.attachmentName = attachmentName; p.attachmentData = attachmentData;
     editingPlaceId = null;
     renderAll();
-    const { error } = await sb.from('ibiza_places').update({ name, notes, reservation_time: time || null, website: website || null }).eq('id', id);
+    const { error } = await sb.from('ibiza_places').update({
+      name, notes, reservation_time: time || null, website: website || null,
+      attachment_name: attachmentName || null, attachment_data: attachmentData || null
+    }).eq('id', id);
     if(error){
       Object.assign(p, prev);
       renderAll();
