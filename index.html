@@ -190,6 +190,10 @@
   }
   .place-card h3{ margin:6px 0 2px; font-size:16px; font-weight:600; }
   .place-card .notes{ font-size:13px; color:var(--ink-soft); margin:4px 0 8px; line-height:1.4; }
+  .place-card .time-badge{
+    display:inline-block; font-family:'IBM Plex Mono',monospace; font-size:11.5px;
+    color:var(--clay); background:#F7EAE3; padding:2px 8px; border-radius:999px; margin:4px 0 8px;
+  }
   .place-card .meta{ display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
   .place-card select{
     font-size:12px; border:1px solid var(--line); border-radius:6px; padding:3px 6px;
@@ -200,10 +204,17 @@
     color:var(--sun-soft); width:20px;height:20px; border-radius:50%;
     display:inline-flex; align-items:center; justify-content:center; flex-shrink:0;
   }
-  .place-card .fav-btn, .place-card .del-btn{
+  .place-card .fav-btn, .place-card .del-btn, .place-card .edit-btn{
     border:none; background:none; cursor:pointer; font-size:15px; padding:2px 4px; color:var(--ink-soft);
   }
   .place-card .fav-btn.active{ color:var(--sun); }
+  .place-card .edit-fields{ display:flex; flex-direction:column; gap:6px; margin:8px 0; }
+  .place-card .edit-fields input, .place-card .edit-fields textarea{
+    font-family:'Inter',sans-serif; font-size:13px; padding:7px 9px;
+    border:1px solid var(--line); border-radius:8px; width:100%;
+  }
+  .place-card .edit-fields textarea{ resize:vertical; min-height:44px; }
+  .place-card .edit-actions{ display:flex; gap:8px; }
   .place-card .move-btns{ display:flex; gap:2px; }
   .place-card .move-btns button{
     border:1px solid var(--line); background:#fff; border-radius:5px; width:22px; height:22px;
@@ -334,6 +345,9 @@
         <input type="text" id="placeName" placeholder="Naam van de plek">
         <select id="placeCategory"></select>
         <textarea id="placeNotes" placeholder="Notities (bv. reserveren nodig, parkeertip, beste tijdstip…)"></textarea>
+        <label style="display:block; font-size:11px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.06em;">Tijd (optioneel, bv. voor reservaties)
+          <input type="time" id="placeTime" style="margin-top:4px;">
+        </label>
         <button class="btn btn-primary btn-block" id="addPlaceBtn">Plek opslaan</button>
       </div>
     </div>
@@ -456,7 +470,8 @@ function mapRow(row){
   return {
     id: row.id, name: row.name, category: row.category,
     notes: row.notes || '', lat: row.lat, lng: row.lng,
-    day: row.day, order: row.order, favorite: row.favorite
+    day: row.day, order: row.order, favorite: row.favorite,
+    time: row.reservation_time || ''
   };
 }
 async function fetchAllFromSupabase(){
@@ -632,6 +647,7 @@ Object.entries(CATEGORIES).forEach(([key, val]) => {
 document.getElementById('addPlaceBtn').addEventListener('click', async () => {
   const name = document.getElementById('placeName').value.trim();
   const notes = document.getElementById('placeNotes').value.trim();
+  const time = document.getElementById('placeTime').value;
   const category = catSelect.value;
 
   if(!name){ showToast('Geef de plek een naam.', true); return; }
@@ -642,6 +658,7 @@ document.getElementById('addPlaceBtn').addEventListener('click', async () => {
 
   const { data, error } = await sb.from('ibiza_places').insert({
     name, notes, category,
+    reservation_time: time || null,
     lat: pendingCoords.lat, lng: pendingCoords.lng,
     day: -1, order: 0, favorite: false
   }).select().single();
@@ -656,6 +673,7 @@ document.getElementById('addPlaceBtn').addEventListener('click', async () => {
   pendingCoords = null;
   document.getElementById('placeName').value = '';
   document.getElementById('placeNotes').value = '';
+  document.getElementById('placeTime').value = '';
   renderAll();
 });
 
@@ -704,6 +722,12 @@ function renderCalendar(){
 /* ============ Category tabs (elke categorie = eigen blad) ============ */
 function renderCatTabs(){
   const el = document.getElementById('catTabs');
+  if(state.activeDay > 0){
+    el.style.display = 'none';
+    el.innerHTML = '';
+    return;
+  }
+  el.style.display = '';
   el.innerHTML = '';
   Object.entries(CATEGORIES).forEach(([key, val]) => {
     const count = state.places.filter(p => p.category === key).length;
@@ -721,17 +745,24 @@ function renderCatTabs(){
 }
 
 /* ============ Place list ============ */
+let editingPlaceId = null;
+
 function visiblePlaces(){
-  let list = state.places.filter(p => p.category === state.activeCat);
-  if(state.activeDay !== 0){
-    list = list.filter(p => p.day === state.activeDay);
-  }
+  // Een specifieke dag aantikken toont alles wat die dag gepland staat,
+  // over alle categorieën heen — ongeacht welk categorie-tabblad actief is.
   if(state.activeDay > 0){
-    list.sort((a,b) => a.order - b.order);
-  } else {
-    list.sort((a,b) => (b.favorite - a.favorite) || a.name.localeCompare(b.name));
+    return state.places.filter(p => p.day === state.activeDay).sort((a,b) => a.order - b.order);
   }
+  let list = state.places.filter(p => p.category === state.activeCat);
+  if(state.activeDay === -1){
+    list = list.filter(p => p.day === -1);
+  }
+  list.sort((a,b) => (b.favorite - a.favorite) || a.name.localeCompare(b.name));
   return list;
+}
+
+function escapeAttr(str){
+  return String(str).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
 function renderPlaceList(){
@@ -739,9 +770,9 @@ function renderPlaceList(){
   const titleEl = document.getElementById('listTitle');
   const list = visiblePlaces();
 
-  if(state.activeDay === 0) titleEl.textContent = `${CATEGORIES[state.activeCat].label} (${list.length})`;
+  if(state.activeDay > 0) titleEl.textContent = `${dayLabel(state.activeDay)} — alles ingepland (${list.length})`;
   else if(state.activeDay === -1) titleEl.textContent = `${CATEGORIES[state.activeCat].label} · Nog niet gepland (${list.length})`;
-  else titleEl.textContent = `${CATEGORIES[state.activeCat].label} · ${dayLabel(state.activeDay)} (${list.length})`;
+  else titleEl.textContent = `${CATEGORIES[state.activeCat].label} (${list.length})`;
 
   el.innerHTML = '';
   if(!list.length){
@@ -753,6 +784,7 @@ function renderPlaceList(){
     const cat = CATEGORIES[p.category];
     const card = document.createElement('div');
     card.className = 'place-card';
+    const isEditing = editingPlaceId === p.id;
 
     const dayOptions = [`<option value="-1" ${p.day===-1?'selected':''}>Niet ingedeeld</option>`];
     for(let d=1; d<=TRIP_DAYS; d++){
@@ -762,6 +794,22 @@ function renderPlaceList(){
       `<option value="${key}" ${p.category===key?'selected':''}>${val.label}</option>`
     );
 
+    const bodyHtml = isEditing ? `
+      <div class="edit-fields">
+        <input type="text" class="edit-name" value="${escapeAttr(p.name)}" placeholder="Naam">
+        <textarea class="edit-notes" placeholder="Notities">${escapeHtml(p.notes)}</textarea>
+        <input type="time" class="edit-time" value="${p.time || ''}">
+        <div class="edit-actions">
+          <button class="btn btn-primary btn-sm" data-save="${p.id}" type="button">Opslaan</button>
+          <button class="btn btn-ghost btn-sm" data-canceledit="${p.id}" type="button">Annuleer</button>
+        </div>
+      </div>
+    ` : `
+      <h3>${escapeHtml(p.name)}</h3>
+      ${p.notes ? `<div class="notes">${escapeHtml(p.notes)}</div>` : ''}
+      ${p.time ? `<div class="time-badge">🕒 ${escapeHtml(p.time)}</div>` : ''}
+    `;
+
     card.innerHTML = `
       <div class="row1">
         <div style="display:flex; align-items:center; gap:8px;">
@@ -769,12 +817,12 @@ function renderPlaceList(){
           <span class="cat-badge" style="background:${cat.color}">${cat.label}</span>
         </div>
         <div>
+          <button class="edit-btn" data-edit="${p.id}">✎</button>
           <button class="fav-btn ${p.favorite?'active':''}" data-fav="${p.id}">★</button>
           <button class="del-btn" data-del="${p.id}">✕</button>
         </div>
       </div>
-      <h3>${escapeHtml(p.name)}</h3>
-      ${p.notes ? `<div class="notes">${escapeHtml(p.notes)}</div>` : ''}
+      ${bodyHtml}
       <div class="meta">
         <select data-catselect="${p.id}">${catOptions.join('')}</select>
         <select data-dayselect="${p.id}">${dayOptions.join('')}</select>
@@ -785,12 +833,43 @@ function renderPlaceList(){
       </div>
     `;
     card.addEventListener('click', (e) => {
-      if(e.target.closest('button') || e.target.closest('select')) return;
+      if(e.target.closest('button') || e.target.closest('select') || e.target.closest('input') || e.target.closest('textarea')) return;
       map.setView([p.lat, p.lng], 16);
     });
     el.appendChild(card);
   });
 
+  el.querySelectorAll('[data-edit]').forEach(btn => btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    editingPlaceId = btn.dataset.edit;
+    renderPlaceList();
+  }));
+  el.querySelectorAll('[data-canceledit]').forEach(btn => btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    editingPlaceId = null;
+    renderPlaceList();
+  }));
+  el.querySelectorAll('[data-save]').forEach(btn => btn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    const id = btn.dataset.save;
+    const card = btn.closest('.place-card');
+    const name = card.querySelector('.edit-name').value.trim();
+    const notes = card.querySelector('.edit-notes').value.trim();
+    const time = card.querySelector('.edit-time').value;
+    if(!name){ showToast('Geef de plek een naam.', true); return; }
+    const p = state.places.find(x => x.id === id);
+    const prev = { name: p.name, notes: p.notes, time: p.time };
+    p.name = name; p.notes = notes; p.time = time;
+    editingPlaceId = null;
+    renderAll();
+    const { error } = await sb.from('ibiza_places').update({ name, notes, reservation_time: time || null }).eq('id', id);
+    if(error){
+      Object.assign(p, prev);
+      renderAll();
+      showToast('Opslaan mislukt: ' + error.message, true);
+      console.error(error);
+    }
+  }));
   el.querySelectorAll('[data-fav]').forEach(btn => btn.addEventListener('click', async (e) => {
     e.stopPropagation();
     const p = state.places.find(x => x.id === btn.dataset.fav);
@@ -870,7 +949,7 @@ function renderMarkers(){
   list.forEach((p, idx) => {
     const icon = state.activeDay > 0 ? numberedIcon(idx+1, p.category) : catIcon(p.category);
     const marker = L.marker([p.lat, p.lng], { icon }).addTo(markersLayer);
-    marker.bindPopup(`<h4>${escapeHtml(p.name)}</h4>${p.notes ? `<div>${escapeHtml(p.notes)}</div>` : ''}<div style="margin-top:4px;color:#888;font-size:11px;">${CATEGORIES[p.category].label}</div>`);
+    marker.bindPopup(`<h4>${escapeHtml(p.name)}</h4>${p.time ? `<div style="color:#C1502E;font-size:11px;font-weight:600;">🕒 ${escapeHtml(p.time)}</div>` : ''}${p.notes ? `<div>${escapeHtml(p.notes)}</div>` : ''}<div style="margin-top:4px;color:#888;font-size:11px;">${CATEGORIES[p.category].label}</div>`);
   });
   if(state.activeDay > 0 && list.length > 1){
     const line = L.polyline(list.map(p => [p.lat, p.lng]), { color: '#1B2A3A', weight: 2, dashArray: '6 6', opacity: .6 });
