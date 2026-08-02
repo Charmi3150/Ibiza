@@ -190,6 +190,22 @@
     cursor:default; text-align:center; color:var(--ink-soft);
     font-size:13px; padding:24px 14px;
   }
+
+  /* flights */
+  .flight-card{
+    background:#fff; border:1px solid var(--line); border-radius:var(--radius);
+    padding:12px 14px; margin-bottom:10px;
+  }
+  .flight-card .row1{ display:flex; justify-content:space-between; align-items:flex-start; }
+  .flight-card h3{ margin:0 0 2px; font-size:15.5px; font-weight:600; }
+  .flight-card .airline{ font-size:12.5px; color:var(--ink-soft); margin-bottom:8px; }
+  .flight-card .leg{ font-size:13px; margin:3px 0; display:flex; gap:6px; }
+  .flight-card .leg .place{ font-weight:600; }
+  .flight-card .attachment-link{
+    display:inline-block; margin-top:8px; font-size:12.5px; font-weight:600;
+    color:var(--mauve); text-decoration:none;
+  }
+  .flight-card .attachment-link:hover{ text-decoration:underline; }
   .place-card .row1{ display:flex; justify-content:space-between; align-items:flex-start; gap:8px; }
   .place-card .cat-badge{
     font-size:10.5px; text-transform:uppercase; letter-spacing:.06em;
@@ -244,7 +260,9 @@
   .time-row{ display:flex; align-items:center; gap:6px; }
   .time-row select{ width:auto; flex:0 0 72px; padding:8px 6px; text-align:center; }
   .time-row .colon{ color:var(--ink-soft); font-weight:600; }
-  .time-row .time-label{ display:block; font-size:11px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.06em; margin-bottom:4px; width:100%; }
+  .time-label{ display:block; font-size:11px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.06em; margin-bottom:4px; width:100%; }
+  .two-col{ display:flex; gap:6px; }
+  .two-col > *{ flex:1; min-width:0; }
   .btn{
     padding:9px 14px; border-radius:8px; border:none; cursor:pointer;
     font-family:'Inter',sans-serif; font-weight:600; font-size:13.5px;
@@ -347,6 +365,47 @@
       <h2>Kalender</h2>
       <div class="cal-grid" id="calGrid"></div>
       <div class="cal-extra" id="calExtra"></div>
+    </div>
+
+    <div class="section">
+      <h2>Vluchten</h2>
+      <div id="flightList"></div>
+      <div class="add-form">
+        <div class="two-col">
+          <input type="text" id="flightNumber" placeholder="Vluchtnummer">
+          <input type="text" id="flightAirline" placeholder="Maatschappij">
+        </div>
+
+        <span class="time-label">Opstijgen</span>
+        <div class="two-col">
+          <input type="text" id="flightDepPlace" placeholder="Vertrekluchthaven (bv. Brussel BRU)">
+          <input type="date" id="flightDepDate">
+        </div>
+        <div class="time-row">
+          <select id="flightDepHour"></select>
+          <span class="colon">:</span>
+          <select id="flightDepMin"></select>
+        </div>
+
+        <span class="time-label" style="margin-top:6px;">Landen</span>
+        <div class="two-col">
+          <input type="text" id="flightArrPlace" placeholder="Aankomstluchthaven (bv. Ibiza IBZ)">
+          <input type="date" id="flightArrDate">
+        </div>
+        <div class="time-row">
+          <select id="flightArrHour"></select>
+          <span class="colon">:</span>
+          <select id="flightArrMin"></select>
+        </div>
+
+        <label style="display:block; font-size:11px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.06em; margin-top:8px;">Bijlage (optioneel, bv. instapkaart of ticket)
+          <input type="file" id="flightAttachment" accept="image/*,application/pdf" style="margin-top:4px; display:block; font-size:12.5px;">
+        </label>
+        <div id="flightAttachmentCurrent" style="font-size:12px; color:var(--ink-soft); margin-top:4px;"></div>
+
+        <button class="btn btn-primary btn-block" id="addFlightBtn" style="margin-top:8px;">Vlucht opslaan</button>
+        <button class="btn btn-ghost btn-block" id="cancelFlightEditBtn" type="button" style="display:none; margin-top:6px;">Annuleer wijziging</button>
+      </div>
     </div>
 
     <div class="section">
@@ -478,13 +537,14 @@ function setSyncStatus(text, isError){
 }
 
 /* ============ State ============ */
-// activeDay/activeCat are local-only (per device), places live in Supabase.
+// activeDay/activeCat are local-only (per device), places/flights live in Supabase.
 let state = defaultState();
 function defaultState(){
   return {
     activeDay: 0,       // 0 = alle dagen, -1 = niet ingedeeld, 1..N = dag
     activeCat: Object.keys(CATEGORIES)[0],
-    places: []
+    places: [],
+    flights: []
   };
 }
 function mapRow(row){
@@ -496,15 +556,38 @@ function mapRow(row){
     website: row.website || ''
   };
 }
+function mapFlightRow(row){
+  return {
+    id: row.id,
+    flightNumber: row.flight_number || '',
+    airline: row.airline || '',
+    depPlace: row.departure_place || '',
+    depDate: row.departure_date || '',
+    depTime: row.departure_time || '',
+    arrPlace: row.arrival_place || '',
+    arrDate: row.arrival_date || '',
+    arrTime: row.arrival_time || '',
+    attachmentName: row.attachment_name || '',
+    attachmentData: row.attachment_data || ''
+  };
+}
 async function fetchAllFromSupabase(){
   setSyncStatus('Synchroniseren…');
-  const { data: places, error: err1 } = await sb.from('ibiza_places').select('*').order('created_at', { ascending: true });
+  const [{ data: places, error: err1 }, { data: flights, error: err2 }] = await Promise.all([
+    sb.from('ibiza_places').select('*').order('created_at', { ascending: true }),
+    sb.from('ibiza_flights').select('*').order('departure_date', { ascending: true })
+  ]);
   if(err1){
     setSyncStatus('Sync mislukt — offline?', true);
     console.error(err1);
     return false;
   }
   state.places = (places || []).map(mapRow);
+  if(err2){
+    console.error(err2);
+  } else {
+    state.flights = (flights || []).map(mapFlightRow);
+  }
   setSyncStatus('Bijgewerkt ' + new Date().toLocaleTimeString('nl-BE', {hour:'2-digit', minute:'2-digit'}));
   return true;
 }
@@ -770,6 +853,182 @@ function renderCalendar(){
   unChip.textContent = `Nog niet gepland (${unassignedCount})`;
   unChip.addEventListener('click', () => { state.activeDay = state.activeDay === -1 ? 0 : -1; renderAll(); });
   extra.appendChild(unChip);
+}
+
+/* ============ Flights ============ */
+let editingFlightId = null;
+let editingFlightAttachment = null; // {name, data} kept when editing without picking a new file
+
+function fileToDataURL(file){
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+function formatFlightDateTime(dateStr, hour, min){
+  if(!dateStr) return '';
+  const dt = new Date(dateStr + 'T00:00:00');
+  const dayPart = dt.toLocaleDateString('nl-BE', { weekday: 'short', day: 'numeric', month: 'short' });
+  const timePart = (hour && min) ? ` · ${hour}:${min}` : '';
+  return dayPart + timePart;
+}
+
+document.getElementById('flightDepHour').innerHTML = hourOptionsHtml('');
+document.getElementById('flightDepMin').innerHTML = minOptionsHtml('');
+document.getElementById('flightArrHour').innerHTML = hourOptionsHtml('');
+document.getElementById('flightArrMin').innerHTML = minOptionsHtml('');
+
+function resetFlightForm(){
+  editingFlightId = null;
+  editingFlightAttachment = null;
+  document.getElementById('flightNumber').value = '';
+  document.getElementById('flightAirline').value = '';
+  document.getElementById('flightDepPlace').value = '';
+  document.getElementById('flightDepDate').value = '';
+  document.getElementById('flightDepHour').value = '';
+  document.getElementById('flightDepMin').value = '';
+  document.getElementById('flightArrPlace').value = '';
+  document.getElementById('flightArrDate').value = '';
+  document.getElementById('flightArrHour').value = '';
+  document.getElementById('flightArrMin').value = '';
+  document.getElementById('flightAttachment').value = '';
+  document.getElementById('flightAttachmentCurrent').textContent = '';
+  document.getElementById('addFlightBtn').textContent = 'Vlucht opslaan';
+  document.getElementById('cancelFlightEditBtn').style.display = 'none';
+}
+
+function fillFlightForm(f){
+  editingFlightId = f.id;
+  editingFlightAttachment = f.attachmentData ? { name: f.attachmentName, data: f.attachmentData } : null;
+  document.getElementById('flightNumber').value = f.flightNumber;
+  document.getElementById('flightAirline').value = f.airline;
+  document.getElementById('flightDepPlace').value = f.depPlace;
+  document.getElementById('flightDepDate').value = f.depDate;
+  document.getElementById('flightDepHour').value = (f.depTime || '').split(':')[0] || '';
+  document.getElementById('flightDepMin').value = (f.depTime || '').split(':')[1] || '';
+  document.getElementById('flightArrPlace').value = f.arrPlace;
+  document.getElementById('flightArrDate').value = f.arrDate;
+  document.getElementById('flightArrHour').value = (f.arrTime || '').split(':')[0] || '';
+  document.getElementById('flightArrMin').value = (f.arrTime || '').split(':')[1] || '';
+  document.getElementById('flightAttachment').value = '';
+  document.getElementById('flightAttachmentCurrent').textContent = f.attachmentName ? `Huidige bijlage: ${f.attachmentName} (kies een nieuw bestand om te vervangen)` : '';
+  document.getElementById('addFlightBtn').textContent = 'Wijziging opslaan';
+  document.getElementById('cancelFlightEditBtn').style.display = 'block';
+  document.getElementById('flightNumber').scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+document.getElementById('cancelFlightEditBtn').addEventListener('click', resetFlightForm);
+
+document.getElementById('addFlightBtn').addEventListener('click', async () => {
+  const flightNumber = document.getElementById('flightNumber').value.trim();
+  const airline = document.getElementById('flightAirline').value.trim();
+  const depPlace = document.getElementById('flightDepPlace').value.trim();
+  const depDate = document.getElementById('flightDepDate').value;
+  const depHour = document.getElementById('flightDepHour').value;
+  const depMin = document.getElementById('flightDepMin').value;
+  const arrPlace = document.getElementById('flightArrPlace').value.trim();
+  const arrDate = document.getElementById('flightArrDate').value;
+  const arrHour = document.getElementById('flightArrHour').value;
+  const arrMin = document.getElementById('flightArrMin').value;
+  const fileInput = document.getElementById('flightAttachment');
+  const file = fileInput.files[0];
+
+  if(!flightNumber && !airline){ showToast('Geef minstens een vluchtnummer of maatschappij op.', true); return; }
+  if(file && file.size > 8 * 1024 * 1024){ showToast('Bijlage is groter dan 8MB, kies een kleiner bestand.', true); return; }
+
+  const btn = document.getElementById('addFlightBtn');
+  btn.disabled = true; btn.textContent = 'Opslaan…';
+
+  let attachmentName = editingFlightAttachment ? editingFlightAttachment.name : '';
+  let attachmentData = editingFlightAttachment ? editingFlightAttachment.data : '';
+  if(file){
+    try{
+      attachmentData = await fileToDataURL(file);
+      attachmentName = file.name;
+    }catch(err){
+      btn.disabled = false;
+      showToast('Kon de bijlage niet inlezen.', true);
+      return;
+    }
+  }
+
+  const payload = {
+    flight_number: flightNumber || null,
+    airline: airline || null,
+    departure_place: depPlace || null,
+    departure_date: depDate || null,
+    departure_time: (depHour && depMin) ? `${depHour}:${depMin}` : null,
+    arrival_place: arrPlace || null,
+    arrival_date: arrDate || null,
+    arrival_time: (arrHour && arrMin) ? `${arrHour}:${arrMin}` : null,
+    attachment_name: attachmentName || null,
+    attachment_data: attachmentData || null
+  };
+
+  let error;
+  if(editingFlightId){
+    ({ error } = await sb.from('ibiza_flights').update(payload).eq('id', editingFlightId));
+  } else {
+    ({ error } = await sb.from('ibiza_flights').insert(payload));
+  }
+
+  btn.disabled = false;
+
+  if(error){
+    btn.textContent = editingFlightId ? 'Wijziging opslaan' : 'Vlucht opslaan';
+    showToast('Opslaan mislukt: ' + error.message, true);
+    console.error(error);
+    return;
+  }
+
+  resetFlightForm();
+  await fetchAllFromSupabase();
+  renderAll();
+});
+
+function renderFlights(){
+  const el = document.getElementById('flightList');
+  el.innerHTML = '';
+  if(!state.flights.length) return;
+
+  state.flights.forEach(f => {
+    const card = document.createElement('div');
+    card.className = 'flight-card';
+    const title = [f.flightNumber, f.airline].filter(Boolean).join(' · ') || 'Vlucht';
+    card.innerHTML = `
+      <div class="row1">
+        <div>
+          <h3>${escapeHtml(title)}</h3>
+        </div>
+        <div>
+          <button class="edit-btn" data-editflight="${f.id}">✎</button>
+          <button class="del-btn" data-delflight="${f.id}">✕</button>
+        </div>
+      </div>
+      ${f.depPlace || f.depDate ? `<div class="leg">🛫 <span class="place">${escapeHtml(f.depPlace)}</span> ${escapeHtml(formatFlightDateTime(f.depDate, f.depTime.split(':')[0], f.depTime.split(':')[1]))}</div>` : ''}
+      ${f.arrPlace || f.arrDate ? `<div class="leg">🛬 <span class="place">${escapeHtml(f.arrPlace)}</span> ${escapeHtml(formatFlightDateTime(f.arrDate, f.arrTime.split(':')[0], f.arrTime.split(':')[1]))}</div>` : ''}
+      ${f.attachmentData ? `<a class="attachment-link" href="${f.attachmentData}" download="${escapeAttr(f.attachmentName || 'bijlage')}">📎 ${escapeHtml(f.attachmentName || 'Bijlage')}</a>` : ''}
+    `;
+    el.appendChild(card);
+  });
+
+  el.querySelectorAll('[data-editflight]').forEach(btn => btn.addEventListener('click', () => {
+    const f = state.flights.find(x => x.id === btn.dataset.editflight);
+    if(f) fillFlightForm(f);
+  }));
+  el.querySelectorAll('[data-delflight]').forEach(btn => btn.addEventListener('click', async () => {
+    const ok = await confirmDialog('Deze vlucht verwijderen?');
+    if(!ok) return;
+    const id = btn.dataset.delflight;
+    state.flights = state.flights.filter(x => x.id !== id);
+    if(editingFlightId === id) resetFlightForm();
+    renderAll();
+    const { error } = await sb.from('ibiza_flights').delete().eq('id', id);
+    if(error){ showToast('Verwijderen mislukt: ' + error.message, true); console.error(error); }
+  }));
 }
 
 /* ============ Category tabs (elke categorie = eigen blad) ============ */
@@ -1078,6 +1337,7 @@ document.getElementById('locateBtn').addEventListener('click', () => {
 /* ============ Render orchestration ============ */
 function renderAll(){
   renderCalendar();
+  renderFlights();
   renderCatTabs();
   renderPlaceList();
   renderMarkers();
