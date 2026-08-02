@@ -232,8 +232,15 @@
   .footer-actions{ padding:14px 20px; display:flex; gap:8px; }
 
   /* ---------- Map ---------- */
-  .map-wrap{ grid-area:map; position:relative; height:100%; width:100%; }
-  #map{ height:100%; width:100%; z-index:0; }
+  .map-wrap{ grid-area:map; position:relative; height:100%; width:100%; min-height:280px; }
+  #map{ height:100%; width:100%; min-height:280px; z-index:0; background:#DED8C8; }
+  .map-error{
+    position:absolute; inset:0; z-index:2000; display:none;
+    align-items:center; justify-content:center; text-align:center;
+    background:var(--whitewash); color:var(--ink-soft); padding:24px; font-size:14px;
+  }
+  .map-error.show{ display:flex; flex-direction:column; gap:10px; }
+  .map-error button{ align-self:center; }
   .map-pick-banner{
     position:absolute; top:14px; left:50%; transform:translateX(-50%);
     z-index:1000; background:var(--ink); color:var(--whitewash);
@@ -332,11 +339,18 @@
       <span>📍 Tik op de kaart om deze plek te plaatsen</span>
       <button class="btn btn-sm" id="cancelPickBtn" type="button">Annuleer</button>
     </div>
+    <div class="map-error" id="mapError">
+      <span>⚠️ De kaart kon niet geladen worden.</span>
+      <button class="btn btn-sm" id="mapRetryBtn" type="button">Opnieuw proberen</button>
+    </div>
   </div>
 
 </div>
 
 <script>
+if(typeof L === 'undefined'){
+  alert('De kaartbibliotheek (Leaflet) kon niet geladen worden. Controleer je internetverbinding en herlaad de pagina.');
+}
 /* ============ Config ============ */
 const CATEGORIES = {
   strand:      { label: 'Strand',        color: '#E8A33D' },
@@ -398,17 +412,69 @@ async function fetchAllFromSupabase(){
 }
 
 /* ============ Map setup ============ */
+function showMapError(show){
+  const el = document.getElementById('mapError');
+  if(el) el.classList.toggle('show', !!show);
+}
+
 const map = L.map('map', { zoomControl: true }).setView(IBIZA_CENTER, 11);
-L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  attribution: '&copy; OpenStreetMap-bijdragers',
-  maxZoom: 19
-}).addTo(map);
+
+// Canonieke tile-URL zonder lettersubdomeinen (a/b/c.tile... wordt afgeraden
+// door OSM en faalt soms op mobiel netwerk/Safari). Met een fallback-provider
+// (CARTO) mocht de primaire tegelserver even niet bereikbaar zijn.
+let usingFallbackTiles = false;
+let tileLoadOk = false;
+let tileErrorTimer = null;
+
+function buildTileLayer(url, attribution){
+  return L.tileLayer(url, { attribution, maxZoom: 19, crossOrigin: true });
+}
+
+let tileLayer = buildTileLayer(
+  'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+  '&copy; OpenStreetMap-bijdragers'
+).addTo(map);
+
+function switchToFallbackTiles(){
+  if(usingFallbackTiles) return;
+  usingFallbackTiles = true;
+  map.removeLayer(tileLayer);
+  tileLayer = buildTileLayer(
+    'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
+    '&copy; OpenStreetMap-bijdragers &copy; CARTO'
+  ).addTo(map);
+  tileLayer.on('load', () => { tileLoadOk = true; showMapError(false); });
+  tileLayer.on('tileerror', () => { if(!tileLoadOk) showMapError(true); });
+}
+
+tileLayer.on('load', () => { tileLoadOk = true; showMapError(false); clearTimeout(tileErrorTimer); });
+tileLayer.on('tileerror', () => { if(!tileLoadOk) switchToFallbackTiles(); });
+// Als er na 6s nog geen enkele tegel is binnengekomen (bv. stille netwerkfout
+// zonder 'tileerror' event op iOS), toon een duidelijke fout i.p.v. een lege kaart.
+tileErrorTimer = setTimeout(() => { if(!tileLoadOk) showMapError(true); }, 6000);
+
+document.getElementById('mapRetryBtn')?.addEventListener('click', () => {
+  showMapError(false);
+  tileLoadOk = false;
+  tileLayer.redraw();
+  clearTimeout(tileErrorTimer);
+  tileErrorTimer = setTimeout(() => { if(!tileLoadOk) switchToFallbackTiles(); }, 6000);
+});
 
 let markersLayer = L.layerGroup().addTo(map);
 let pickModeActive = false;
 
-window.addEventListener('resize', () => map.invalidateSize());
-setTimeout(() => map.invalidateSize(), 300);
+// iOS Safari verandert de viewport-hoogte wanneer de adresbalk in-/uitschuift,
+// zonder altijd een 'resize' event te vuren op window. Daarom ook luisteren op
+// visualViewport en een ResizeObserver op de kaart-container zelf.
+function refreshMapSize(){ map.invalidateSize(); }
+window.addEventListener('resize', refreshMapSize);
+if(window.visualViewport) window.visualViewport.addEventListener('resize', refreshMapSize);
+if(window.ResizeObserver){
+  new ResizeObserver(refreshMapSize).observe(document.querySelector('.map-wrap'));
+}
+[100, 400, 1000].forEach(ms => setTimeout(refreshMapSize, ms));
+document.addEventListener('visibilitychange', () => { if(!document.hidden) refreshMapSize(); });
 
 map.on('click', (e) => {
   if(!pickModeActive) return;
