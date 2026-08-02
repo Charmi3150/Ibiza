@@ -73,7 +73,8 @@
       height:auto;
       min-height:100vh;
     }
-    #map{ height:50vh; }
+    #map{ height:auto; }
+    .map-wrap{ height:50vh; }
   }
 
   /* ---------- Header ---------- */
@@ -232,16 +233,21 @@
     padding:7px 9px; font-size:12.5px; cursor:pointer; color:var(--ink-soft);
   }
   .geo-result:hover{ background:var(--whitewash-dim); }
-  .pick-hint{
-    font-size:12px; color:var(--pine); background:#EAF0EC; border:1px dashed var(--pine);
-    border-radius:8px; padding:6px 9px; display:none;
-  }
-  .pick-hint.show{ display:block; }
 
   .footer-actions{ padding:14px 20px; display:flex; gap:8px; }
 
   /* ---------- Map ---------- */
-  #map{ grid-area:map; height:100%; width:100%; z-index:0; }
+  .map-wrap{ grid-area:map; position:relative; height:100%; width:100%; }
+  #map{ height:100%; width:100%; z-index:0; }
+  .map-pick-banner{
+    position:absolute; top:14px; left:50%; transform:translateX(-50%);
+    z-index:1000; background:var(--ink); color:var(--whitewash);
+    padding:10px 10px 10px 16px; border-radius:999px; box-shadow:var(--shadow);
+    display:none; align-items:center; gap:12px; font-size:13.5px;
+    border:2px solid var(--sun); max-width:90%;
+  }
+  .map-pick-banner.show{ display:flex; }
+  .map-pick-banner .btn{ background:var(--sun); color:var(--ink); white-space:nowrap; }
   .leaflet-popup-content{ font-family:'Inter',sans-serif; font-size:13px; }
   .leaflet-popup-content h4{ font-family:'Fraunces',serif; margin:0 0 4px; font-size:15px; }
 
@@ -300,7 +306,6 @@
           <button class="btn btn-ghost btn-sm" id="geoSearchBtn">Zoek</button>
         </div>
         <div id="geocodeResults"></div>
-        <div class="pick-hint" id="pickHint">📍 Klik op de kaart om de locatie te kiezen</div>
         <button class="btn btn-ghost btn-sm" id="pickOnMapBtn" type="button">Of kies locatie op de kaart</button>
 
         <input type="text" id="placeName" placeholder="Naam van de plek">
@@ -326,7 +331,13 @@
 
   </div>
 
-  <div id="map"></div>
+  <div class="map-wrap">
+    <div id="map"></div>
+    <div class="map-pick-banner" id="mapPickBanner">
+      <span>📍 Tik op de kaart om deze plek te plaatsen</span>
+      <button class="btn btn-sm" id="cancelPickBtn" type="button">Annuleer</button>
+    </div>
+  </div>
 
 </div>
 
@@ -404,10 +415,12 @@ let pickModeActive = false;
 map.on('click', (e) => {
   if(!pickModeActive) return;
   pendingCoords = { lat: e.latlng.lat, lng: e.latlng.lng };
+  markersLayer.clearLayers();
+  renderMarkers();
   L.marker([pendingCoords.lat, pendingCoords.lng]).addTo(markersLayer)
     .bindPopup('Nieuwe locatie — vul de naam in en sla op').openPopup();
   pickModeActive = false;
-  document.getElementById('pickHint').classList.remove('show');
+  document.getElementById('mapPickBanner').classList.remove('show');
 });
 
 function catIcon(catKey){
@@ -474,7 +487,12 @@ async function doGeocode(){
 
 document.getElementById('pickOnMapBtn').addEventListener('click', () => {
   pickModeActive = true;
-  document.getElementById('pickHint').classList.add('show');
+  document.getElementById('mapPickBanner').classList.add('show');
+  document.querySelector('.map-wrap').scrollIntoView({ behavior: 'smooth', block: 'start' });
+});
+document.getElementById('cancelPickBtn').addEventListener('click', () => {
+  pickModeActive = false;
+  document.getElementById('mapPickBanner').classList.remove('show');
 });
 
 /* ============ Add place ============ */
