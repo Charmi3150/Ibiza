@@ -126,22 +126,28 @@
     margin:0 0 12px;
   }
 
-  /* day tabs */
-  .day-tabs{ display:flex; flex-wrap:wrap; gap:6px; }
-  .day-tab{
-    padding:6px 12px;
-    border-radius:999px;
-    border:1px solid var(--line);
-    background:#fff;
-    font-size:13px;
-    cursor:pointer;
-    font-weight:500;
-    color:var(--ink-soft);
-    white-space:nowrap;
+  /* calendar */
+  .cal-grid{ display:grid; grid-template-columns:repeat(4, 1fr); gap:6px; }
+  .cal-day{
+    background:#fff; border:1px solid var(--line); border-radius:10px;
+    padding:8px 4px 6px; text-align:center; cursor:pointer;
   }
-  .day-tab .count{ font-family:'IBM Plex Mono',monospace; font-size:11px; opacity:.6; margin-left:4px;}
-  .day-tab.active{ background:var(--ink); color:var(--whitewash); border-color:var(--ink); }
-  .day-tab.unassigned.active{ background:var(--mauve); border-color:var(--mauve); }
+  .cal-day .wd{ font-size:10px; text-transform:uppercase; letter-spacing:.06em; color:var(--ink-soft); }
+  .cal-day .dt{ font-family:'Fraunces',serif; font-size:19px; font-weight:600; margin-top:1px; color:var(--ink); }
+  .cal-day .count{ font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--ink-soft); margin-top:2px; }
+  .cal-day.active{ background:var(--ink); border-color:var(--ink); }
+  .cal-day.active .wd, .cal-day.active .dt, .cal-day.active .count{ color:var(--whitewash); }
+  .cal-extra{ display:flex; gap:6px; margin-top:8px; flex-wrap:wrap; }
+
+  /* category tabs (per-category "blad") */
+  .cat-tabs{ display:flex; gap:2px; margin:-4px -4px 10px; border-bottom:1px solid var(--line); }
+  .cat-tab{
+    flex:1; text-align:center; padding:8px 4px 9px; font-size:12px; font-weight:600;
+    color:var(--ink-soft); cursor:pointer; border-bottom:2px solid transparent;
+    white-space:nowrap; display:flex; flex-direction:column; align-items:center; gap:4px;
+  }
+  .cat-tab .dot{ width:8px; height:8px; border-radius:50%; }
+  .cat-tab.active{ color:var(--ink); border-bottom-color:currentColor; }
 
   /* filters */
   .chip-row{ display:flex; flex-wrap:wrap; gap:6px; }
@@ -303,28 +309,16 @@
   <header>
     <div class="brand">
       <h1>Ibiza Roadtrip</h1>
-      <span class="tag">Logboek voor onderweg</span>
-    </div>
-    <div class="trip-config">
-      <label>Startdatum
-        <input type="date" id="tripStart">
-      </label>
-      <label>Aantal dagen
-        <input type="number" id="tripDays" min="1" max="21" style="width:60px;">
-      </label>
+      <span class="tag">Logboek voor onderweg · 5–12 september</span>
     </div>
   </header>
 
   <div id="sidebar">
 
     <div class="section">
-      <h2>Dagen</h2>
-      <div class="day-tabs" id="dayTabs"></div>
-    </div>
-
-    <div class="section">
-      <h2>Categorie</h2>
-      <div class="chip-row" id="catFilters"></div>
+      <h2>Kalender</h2>
+      <div class="cal-grid" id="calGrid"></div>
+      <div class="cal-extra" id="calExtra"></div>
     </div>
 
     <div class="section">
@@ -345,6 +339,7 @@
     </div>
 
     <div class="section" style="border-bottom:none; flex:1; display:flex; flex-direction:column; padding-bottom:0;">
+      <div class="cat-tabs" id="catTabs"></div>
       <h2 id="listTitle">Alle plekken</h2>
       <div id="placeList"></div>
     </div>
@@ -425,13 +420,15 @@ if(typeof L === 'undefined'){
 }
 /* ============ Config ============ */
 const CATEGORIES = {
-  strand:      { label: 'Strand',        color: '#E8A33D' },
-  eten:        { label: 'Eten',          color: '#C1502E' },
-  drinken:     { label: 'Drinken',       color: '#3E5C4A' },
-  bezienswaardigheid: { label: 'Bezienswaardigheid', color: '#1B2A3A' },
-  shopping:    { label: 'Shopping',      color: '#7A5C6E' },
+  strand:      { label: 'Strand',   color: '#E8A33D' },
+  eten:        { label: 'Eten',     color: '#C1502E' },
+  shopping:    { label: 'Shopping', color: '#7A5C6E' },
+  andere:      { label: 'Andere',   color: '#33475A' },
 };
 const IBIZA_CENTER = [38.9843, 1.4085];
+// Reisdatums liggen vast op 5 t/m 12 september.
+const TRIP_START = '2026-09-05';
+const TRIP_DAYS = 8;
 
 /* ============ Supabase ============ */
 const SUPABASE_URL = 'https://npztyprvrnazuvspjbvn.supabase.co';
@@ -446,14 +443,12 @@ function setSyncStatus(text, isError){
 }
 
 /* ============ State ============ */
-// activeDay/activeCats are local-only (per device), places/trip settings live in Supabase.
+// activeDay/activeCat are local-only (per device), places live in Supabase.
 let state = defaultState();
 function defaultState(){
   return {
-    tripStart: '',
-    tripDays: 7,
-    activeDay: 0,       // 0 = alle plekken, -1 = niet ingedeeld, 1..N = dag
-    activeCats: Object.keys(CATEGORIES),
+    activeDay: 0,       // 0 = alle dagen, -1 = niet ingedeeld, 1..N = dag
+    activeCat: Object.keys(CATEGORIES)[0],
     places: []
   };
 }
@@ -466,19 +461,13 @@ function mapRow(row){
 }
 async function fetchAllFromSupabase(){
   setSyncStatus('Synchroniseren…');
-  const [{ data: places, error: err1 }, { data: settingsRows, error: err2 }] = await Promise.all([
-    sb.from('ibiza_places').select('*').order('created_at', { ascending: true }),
-    sb.from('ibiza_trip_settings').select('*').eq('id', 1).limit(1)
-  ]);
-  if(err1 || err2){
+  const { data: places, error: err1 } = await sb.from('ibiza_places').select('*').order('created_at', { ascending: true });
+  if(err1){
     setSyncStatus('Sync mislukt — offline?', true);
-    console.error(err1 || err2);
+    console.error(err1);
     return false;
   }
   state.places = (places || []).map(mapRow);
-  const s = (settingsRows && settingsRows[0]) || {};
-  state.tripStart = s.trip_start || '';
-  state.tripDays = s.trip_days || 7;
   setSyncStatus('Bijgewerkt ' + new Date().toLocaleTimeString('nl-BE', {hour:'2-digit', minute:'2-digit'}));
   return true;
 }
@@ -670,69 +659,70 @@ document.getElementById('addPlaceBtn').addEventListener('click', async () => {
   renderAll();
 });
 
-/* ============ Day tabs ============ */
-function renderDayTabs(){
-  const el = document.getElementById('dayTabs');
-  el.innerHTML = '';
-  const allTab = makeDayTab('Alle plekken', 0, state.places.length);
-  el.appendChild(allTab);
-
-  for(let d = 1; d <= (state.tripDays||1); d++){
-    const count = state.places.filter(p => p.day === d).length;
-    const label = dayLabel(d);
-    el.appendChild(makeDayTab(label, d, count));
-  }
-  const unassignedCount = state.places.filter(p => p.day === -1).length;
-  const un = makeDayTab('Niet ingedeeld', -1, unassignedCount);
-  un.classList.add('unassigned');
-  el.appendChild(un);
+/* ============ Calendar ============ */
+function dateForDay(d){
+  const start = new Date(TRIP_START + 'T00:00:00');
+  const dt = new Date(start);
+  dt.setDate(start.getDate() + (d - 1));
+  return dt;
 }
 function dayLabel(d){
-  if(state.tripStart){
-    const start = new Date(state.tripStart + 'T00:00:00');
-    const dt = new Date(start);
-    dt.setDate(start.getDate() + (d - 1));
-    const fmt = dt.toLocaleDateString('nl-BE', { day: 'numeric', month: 'short' });
-    return `Dag ${d} · ${fmt}`;
-  }
-  return `Dag ${d}`;
+  return dateForDay(d).toLocaleDateString('nl-BE', { weekday: 'short', day: 'numeric', month: 'short' });
 }
-function makeDayTab(label, dayVal, count){
-  const btn = document.createElement('div');
-  btn.className = 'day-tab' + (state.activeDay === dayVal ? ' active' : '');
-  btn.innerHTML = `${label}<span class="count">${count}</span>`;
-  btn.addEventListener('click', () => {
-    state.activeDay = dayVal;
-    renderAll();
-  });
-  return btn;
-}
-
-/* ============ Category filters ============ */
-function renderCatFilters(){
-  const el = document.getElementById('catFilters');
-  el.innerHTML = '';
-  Object.entries(CATEGORIES).forEach(([key, val]) => {
-    const chip = document.createElement('div');
-    const active = state.activeCats.includes(key);
-    chip.className = 'chip' + (active ? ' active' : '');
-    chip.style.color = val.color;
-    chip.innerHTML = `<span class="dot" style="background:${val.color}"></span>${val.label}`;
-    chip.addEventListener('click', () => {
-      if(state.activeCats.includes(key)){
-        state.activeCats = state.activeCats.filter(c => c !== key);
-      } else {
-        state.activeCats.push(key);
-      }
+function renderCalendar(){
+  const grid = document.getElementById('calGrid');
+  const extra = document.getElementById('calExtra');
+  grid.innerHTML = '';
+  for(let d = 1; d <= TRIP_DAYS; d++){
+    const dt = dateForDay(d);
+    const wd = dt.toLocaleDateString('nl-BE', { weekday: 'short' });
+    const count = state.places.filter(p => p.day === d).length;
+    const cell = document.createElement('div');
+    cell.className = 'cal-day' + (state.activeDay === d ? ' active' : '');
+    cell.innerHTML = `<div class="wd">${wd}</div><div class="dt">${dt.getDate()}</div><div class="count">${count ? count : ''}</div>`;
+    cell.addEventListener('click', () => {
+      state.activeDay = state.activeDay === d ? 0 : d;
       renderAll();
     });
-    el.appendChild(chip);
+    grid.appendChild(cell);
+  }
+  extra.innerHTML = '';
+  const allChip = document.createElement('div');
+  allChip.className = 'chip' + (state.activeDay === 0 ? ' active' : '');
+  allChip.textContent = 'Alle dagen';
+  allChip.addEventListener('click', () => { state.activeDay = 0; renderAll(); });
+  extra.appendChild(allChip);
+
+  const unassignedCount = state.places.filter(p => p.day === -1).length;
+  const unChip = document.createElement('div');
+  unChip.className = 'chip' + (state.activeDay === -1 ? ' active' : '');
+  unChip.textContent = `Nog niet gepland (${unassignedCount})`;
+  unChip.addEventListener('click', () => { state.activeDay = state.activeDay === -1 ? 0 : -1; renderAll(); });
+  extra.appendChild(unChip);
+}
+
+/* ============ Category tabs (elke categorie = eigen blad) ============ */
+function renderCatTabs(){
+  const el = document.getElementById('catTabs');
+  el.innerHTML = '';
+  Object.entries(CATEGORIES).forEach(([key, val]) => {
+    const count = state.places.filter(p => p.category === key).length;
+    const active = state.activeCat === key;
+    const tab = document.createElement('div');
+    tab.className = 'cat-tab' + (active ? ' active' : '');
+    if(active) tab.style.color = val.color;
+    tab.innerHTML = `<span class="dot" style="background:${val.color}"></span>${val.label} (${count})`;
+    tab.addEventListener('click', () => {
+      state.activeCat = key;
+      renderAll();
+    });
+    el.appendChild(tab);
   });
 }
 
 /* ============ Place list ============ */
 function visiblePlaces(){
-  let list = state.places.filter(p => state.activeCats.includes(p.category));
+  let list = state.places.filter(p => p.category === state.activeCat);
   if(state.activeDay !== 0){
     list = list.filter(p => p.day === state.activeDay);
   }
@@ -749,9 +739,9 @@ function renderPlaceList(){
   const titleEl = document.getElementById('listTitle');
   const list = visiblePlaces();
 
-  if(state.activeDay === 0) titleEl.textContent = `Alle plekken (${list.length})`;
-  else if(state.activeDay === -1) titleEl.textContent = `Niet ingedeeld (${list.length})`;
-  else titleEl.textContent = `${dayLabel(state.activeDay)} (${list.length})`;
+  if(state.activeDay === 0) titleEl.textContent = `${CATEGORIES[state.activeCat].label} (${list.length})`;
+  else if(state.activeDay === -1) titleEl.textContent = `${CATEGORIES[state.activeCat].label} · Nog niet gepland (${list.length})`;
+  else titleEl.textContent = `${CATEGORIES[state.activeCat].label} · ${dayLabel(state.activeDay)} (${list.length})`;
 
   el.innerHTML = '';
   if(!list.length){
@@ -765,7 +755,7 @@ function renderPlaceList(){
     card.className = 'place-card';
 
     const dayOptions = [`<option value="-1" ${p.day===-1?'selected':''}>Niet ingedeeld</option>`];
-    for(let d=1; d<=(state.tripDays||1); d++){
+    for(let d=1; d<=TRIP_DAYS; d++){
       dayOptions.push(`<option value="${d}" ${p.day===d?'selected':''}>${dayLabel(d)}</option>`);
     }
     const catOptions = Object.entries(CATEGORIES).map(([key, val]) =>
@@ -888,18 +878,6 @@ function renderMarkers(){
   }
 }
 
-/* ============ Trip config ============ */
-document.getElementById('tripStart').addEventListener('change', async (e) => {
-  state.tripStart = e.target.value; renderAll();
-  const { error } = await sb.from('ibiza_trip_settings').update({ trip_start: state.tripStart || null }).eq('id', 1);
-  if(error){ setSyncStatus('Opslaan mislukt', true); console.error(error); }
-});
-document.getElementById('tripDays').addEventListener('change', async (e) => {
-  state.tripDays = Math.max(1, parseInt(e.target.value,10) || 1); renderAll();
-  const { error } = await sb.from('ibiza_trip_settings').update({ trip_days: state.tripDays }).eq('id', 1);
-  if(error){ setSyncStatus('Opslaan mislukt', true); console.error(error); }
-});
-
 /* ============ Export / import ============ */
 document.getElementById('exportBtn').addEventListener('click', () => {
   const blob = new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' });
@@ -920,12 +898,6 @@ document.getElementById('importFile').addEventListener('change', (e) => {
     try{
       const parsed = JSON.parse(ev.target.result);
       setSyncStatus('Importeren…');
-      if(parsed.tripStart !== undefined || parsed.tripDays !== undefined){
-        await sb.from('ibiza_trip_settings').update({
-          trip_start: parsed.tripStart || null,
-          trip_days: parsed.tripDays || 7
-        }).eq('id', 1);
-      }
       if(Array.isArray(parsed.places) && parsed.places.length){
         const rows = parsed.places.map(p => ({
           name: p.name, category: p.category, notes: p.notes || '',
@@ -956,10 +928,8 @@ document.getElementById('locateBtn').addEventListener('click', () => {
 
 /* ============ Render orchestration ============ */
 function renderAll(){
-  document.getElementById('tripStart').value = state.tripStart || '';
-  document.getElementById('tripDays').value = state.tripDays || 7;
-  renderDayTabs();
-  renderCatFilters();
+  renderCalendar();
+  renderCatTabs();
   renderPlaceList();
   renderMarkers();
 }
