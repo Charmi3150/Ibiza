@@ -133,6 +133,15 @@
     color:var(--ink-soft);
     margin:0 0 12px;
   }
+  .section-toggle{
+    display:flex; align-items:center; justify-content:space-between;
+    width:100%; background:none; border:none; padding:0; cursor:pointer; text-align:left;
+  }
+  .section-toggle h2{ margin:0 0 12px; }
+  .section-toggle-btn{
+    font-family:'Inter',sans-serif; font-size:12px; font-weight:700; color:var(--clay);
+    white-space:nowrap; margin-left:10px; margin-top:-12px;
+  }
 
   /* calendar */
   .cal-grid{ display:grid; grid-template-columns:repeat(4, 1fr); gap:6px; }
@@ -206,7 +215,8 @@
     color:var(--mauve); text-decoration:none;
   }
   .flight-card .attachment-link:hover{ text-decoration:underline; }
-  .place-card .row1{ display:flex; justify-content:space-between; align-items:flex-start; gap:8px; }
+  .place-card .row1{ display:flex; justify-content:space-between; align-items:flex-start; gap:6px; }
+  .place-card .row1 > div:last-child{ display:flex; gap:1px; flex-shrink:0; }
   .place-card .cat-badge{
     font-size:10.5px; text-transform:uppercase; letter-spacing:.06em;
     padding:2px 8px; border-radius:999px; color:#fff; font-weight:600;
@@ -234,7 +244,7 @@
     display:inline-flex; align-items:center; justify-content:center; flex-shrink:0;
   }
   .place-card .fav-btn, .place-card .del-btn, .place-card .edit-btn, .place-card .nav-btn{
-    border:none; background:none; cursor:pointer; font-size:15px; padding:2px 4px; color:var(--ink-soft);
+    border:none; background:none; cursor:pointer; font-size:14.5px; padding:2px 3px; color:var(--ink-soft);
   }
   .place-card .fav-btn.active{ color:var(--sun); }
   .place-card .edit-fields{ display:flex; flex-direction:column; gap:6px; margin:8px 0; }
@@ -368,9 +378,12 @@
     </div>
 
     <div class="section">
-      <h2>Vluchten</h2>
+      <button class="section-toggle" id="toggleFlightForm" type="button">
+        <h2>Vluchten</h2>
+        <span class="section-toggle-btn">+ Toevoegen</span>
+      </button>
       <div id="flightList"></div>
-      <div class="add-form">
+      <div class="add-form" id="flightFormWrap" style="display:none;">
         <div class="two-col">
           <input type="text" id="flightNumber" placeholder="Vluchtnummer">
           <input type="text" id="flightAirline" placeholder="Maatschappij">
@@ -409,8 +422,11 @@
     </div>
 
     <div class="section">
-      <h2>Plek toevoegen</h2>
-      <div class="add-form">
+      <button class="section-toggle" id="togglePlaceForm" type="button">
+        <h2>Plek toevoegen</h2>
+        <span class="section-toggle-btn">+ Toevoegen</span>
+      </button>
+      <div class="add-form" id="placeFormWrap" style="display:none;">
         <div class="search-row">
           <input type="text" id="geoSearch" placeholder="Zoek adres of plaatsnaam op Ibiza…">
           <button class="btn btn-ghost btn-sm" id="geoSearchBtn">Zoek</button>
@@ -742,6 +758,13 @@ document.getElementById('cancelPickBtn').addEventListener('click', () => {
 });
 
 /* ============ Add place ============ */
+document.getElementById('togglePlaceForm').addEventListener('click', () => {
+  const wrap = document.getElementById('placeFormWrap');
+  const isOpen = wrap.style.display !== 'none';
+  wrap.style.display = isOpen ? 'none' : 'block';
+  document.getElementById('togglePlaceForm').querySelector('.section-toggle-btn').textContent = isOpen ? '+ Toevoegen' : '− Verbergen';
+});
+
 const catSelect = document.getElementById('placeCategory');
 Object.entries(CATEGORIES).forEach(([key, val]) => {
   const opt = document.createElement('option');
@@ -762,7 +785,10 @@ function hourOptionsHtml(selected){
 }
 function minOptionsHtml(selected){
   let html = '<option value="">--</option>';
-  ['00','15','30','45'].forEach(m => { html += `<option value="${m}" ${selected===m?'selected':''}>${m}</option>`; });
+  for(let m=0; m<60; m++){
+    const v = String(m).padStart(2,'0');
+    html += `<option value="${v}" ${selected===v?'selected':''}>${v}</option>`;
+  }
   return html;
 }
 document.getElementById('placeTimeHour').innerHTML = hourOptionsHtml('');
@@ -881,6 +907,15 @@ document.getElementById('flightDepMin').innerHTML = minOptionsHtml('');
 document.getElementById('flightArrHour').innerHTML = hourOptionsHtml('');
 document.getElementById('flightArrMin').innerHTML = minOptionsHtml('');
 
+function setFlightFormOpen(open){
+  document.getElementById('flightFormWrap').style.display = open ? 'block' : 'none';
+  document.getElementById('toggleFlightForm').querySelector('.section-toggle-btn').textContent = open ? '− Verbergen' : '+ Toevoegen';
+}
+document.getElementById('toggleFlightForm').addEventListener('click', () => {
+  const isOpen = document.getElementById('flightFormWrap').style.display !== 'none';
+  setFlightFormOpen(!isOpen);
+});
+
 function resetFlightForm(){
   editingFlightId = null;
   editingFlightAttachment = null;
@@ -898,6 +933,7 @@ function resetFlightForm(){
   document.getElementById('flightAttachmentCurrent').textContent = '';
   document.getElementById('addFlightBtn').textContent = 'Vlucht opslaan';
   document.getElementById('cancelFlightEditBtn').style.display = 'none';
+  setFlightFormOpen(false);
 }
 
 function fillFlightForm(f){
@@ -917,6 +953,7 @@ function fillFlightForm(f){
   document.getElementById('flightAttachmentCurrent').textContent = f.attachmentName ? `Huidige bijlage: ${f.attachmentName} (kies een nieuw bestand om te vervangen)` : '';
   document.getElementById('addFlightBtn').textContent = 'Wijziging opslaan';
   document.getElementById('cancelFlightEditBtn').style.display = 'block';
+  setFlightFormOpen(true);
   document.getElementById('flightNumber').scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 
