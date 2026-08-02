@@ -64,16 +64,12 @@
   }
   @media (max-width: 880px){
     .app{
-      grid-template-columns: 1fr;
-      grid-template-rows: auto auto 1fr;
-      grid-template-areas:
-        "header"
-        "sidebar"
-        "map";
+      display:flex;
+      flex-direction:column;
       height:auto;
       min-height:100vh;
     }
-    .map-wrap{ height:50vh; }
+    .map-wrap{ height:60vh; flex-shrink:0; }
   }
 
   /* ---------- Header ---------- */
