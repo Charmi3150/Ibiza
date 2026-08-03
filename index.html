@@ -143,6 +143,26 @@
     white-space:nowrap; margin-left:10px; margin-top:-12px;
   }
 
+  /* home tiles */
+  .tile-grid{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .tile{
+    background:var(--ink); color:#fff; border:none; border-radius:var(--radius);
+    padding:22px 14px; text-align:center; cursor:pointer;
+    display:flex; flex-direction:column; align-items:center; gap:8px;
+    transition:transform .15s ease, box-shadow .15s ease;
+  }
+  .tile:active{ transform:scale(.97); }
+  .tile .tile-icon{ font-size:26px; line-height:1; }
+  .tile .tile-title{ font-family:'Inter',sans-serif; font-weight:700; font-size:14.5px; }
+  .tile .tile-sub{ font-size:11.5px; opacity:.75; }
+  .tile.agenda{ background:var(--clay); }
+
+  /* back button */
+  .back-btn{
+    background:none; border:none; cursor:pointer; padding:0;
+    font-family:'Inter',sans-serif; font-weight:700; font-size:13.5px; color:var(--ink-soft);
+  }
+
   /* calendar */
   .cal-grid{ display:grid; grid-template-columns:repeat(4, 1fr); gap:6px; }
   .cal-day{
@@ -155,16 +175,6 @@
   .cal-day.active{ background:var(--ink); border-color:var(--ink); }
   .cal-day.active .wd, .cal-day.active .dt, .cal-day.active .count{ color:var(--whitewash); }
   .cal-extra{ display:flex; gap:6px; margin-top:8px; flex-wrap:wrap; }
-
-  /* category tabs (per-category "blad") */
-  .cat-tabs{ display:flex; gap:2px; margin:-4px -4px 10px; border-bottom:1px solid var(--line); }
-  .cat-tab{
-    flex:1; min-width:0; text-align:center; padding:8px 3px 9px; font-size:11.5px; font-weight:600;
-    color:var(--ink-soft); cursor:pointer; border-bottom:2px solid transparent;
-    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
-  }
-  .cat-tab .dot{ width:7px; height:7px; border-radius:50%; display:inline-block; margin-right:4px; }
-  .cat-tab.active{ color:var(--ink); border-bottom-color:currentColor; }
 
   /* filters */
   .chip-row{ display:flex; flex-wrap:wrap; gap:6px; }
@@ -398,126 +408,148 @@
 
   <div id="sidebar">
 
-    <div class="section">
-      <button class="section-toggle" id="toggleTripSettings" type="button">
-        <h2>Reis</h2>
-        <span class="section-toggle-btn">✎ Wijzig</span>
-      </button>
-      <div id="tripSummary" style="font-size:13px; color:var(--ink-soft);"></div>
-      <div class="add-form" id="tripSettingsFormWrap" style="display:none;">
-        <input type="text" id="tripDestinationInput" placeholder="Bestemming (bv. Ibiza, Toscane, Lissabon)">
-        <div class="search-row">
-          <input type="text" id="tripLocationSearch" placeholder="Zoek locatie voor kaart-centrum">
-          <button class="btn btn-ghost btn-sm" id="tripLocationSearchBtn" type="button">Zoek</button>
+    <!-- ============ HOME: reis + tegels ============ -->
+    <div id="homeView">
+      <div class="section">
+        <button class="section-toggle" id="toggleTripSettings" type="button">
+          <h2>Reis</h2>
+          <span class="section-toggle-btn">✎ Wijzig</span>
+        </button>
+        <div id="tripSummary" style="font-size:13px; color:var(--ink-soft);"></div>
+        <div class="add-form" id="tripSettingsFormWrap" style="display:none;">
+          <input type="text" id="tripDestinationInput" placeholder="Bestemming (bv. Ibiza, Toscane, Lissabon)">
+          <div class="search-row">
+            <input type="text" id="tripLocationSearch" placeholder="Zoek locatie voor kaart-centrum">
+            <button class="btn btn-ghost btn-sm" id="tripLocationSearchBtn" type="button">Zoek</button>
+          </div>
+          <div id="tripLocationResults"></div>
+          <span class="time-label" style="margin-top:6px;">Reisperiode</span>
+          <div class="two-col">
+            <input type="date" id="tripStartInput">
+            <input type="number" id="tripDaysInput" min="1" max="60" placeholder="Aantal dagen">
+          </div>
+          <button class="btn btn-primary btn-block" id="saveTripSettingsBtn" type="button" style="margin-top:8px;">Reisinstellingen opslaan</button>
         </div>
-        <div id="tripLocationResults"></div>
-        <span class="time-label" style="margin-top:6px;">Reisperiode</span>
-        <div class="two-col">
-          <input type="date" id="tripStartInput">
-          <input type="number" id="tripDaysInput" min="1" max="60" placeholder="Aantal dagen">
-        </div>
-        <button class="btn btn-primary btn-block" id="saveTripSettingsBtn" type="button" style="margin-top:8px;">Reisinstellingen opslaan</button>
+      </div>
+
+      <div class="section" style="border-bottom:none;">
+        <div class="tile-grid" id="tileGrid"></div>
+      </div>
+
+      <div class="footer-actions" style="flex-wrap:wrap; align-items:center;">
+        <button class="btn btn-ghost btn-sm" id="refreshBtn" title="Nieuwste plekken ophalen">↻ Ververs</button>
+        <button class="btn btn-ghost btn-sm" id="exportBtn">Exporteer JSON</button>
+        <button class="btn btn-ghost btn-sm" id="importBtn">Importeer JSON</button>
+        <input type="file" id="importFile" accept=".json" style="display:none;">
+        <span id="syncStatus" class="mono" style="font-size:11px; color:var(--ink-soft); margin-left:auto;"></span>
       </div>
     </div>
 
-    <div class="section">
-      <h2>Kalender</h2>
-      <div class="cal-grid" id="calGrid"></div>
-      <div class="cal-extra" id="calExtra"></div>
-    </div>
+    <!-- ============ CATEGORIE-tegel: kaart + lijst voor 1 categorie ============ -->
+    <div id="categoryView" style="display:none;">
+      <div class="section" style="padding-bottom:8px; display:flex; justify-content:space-between; align-items:center;">
+        <button class="back-btn" id="backFromCategoryBtn" type="button">← Terug</button>
+        <button class="btn btn-ghost btn-sm" id="locateBtn" title="Centreer op mijn locatie">📍 Mijn locatie</button>
+      </div>
 
-    <div class="section">
-      <button class="section-toggle" id="toggleFlightForm" type="button">
-        <h2>Vluchten</h2>
-        <span class="section-toggle-btn">+ Toevoegen</span>
-      </button>
-      <div id="flightList"></div>
-      <div class="add-form" id="flightFormWrap" style="display:none;">
-        <div class="two-col">
-          <input type="text" id="flightNumber" placeholder="Vluchtnummer">
-          <input type="text" id="flightAirline" placeholder="Maatschappij">
-        </div>
+      <div class="section">
+        <button class="section-toggle" id="togglePlaceForm" type="button">
+          <h2>Plek toevoegen</h2>
+          <span class="section-toggle-btn">+ Toevoegen</span>
+        </button>
+        <div class="add-form" id="placeFormWrap" style="display:none;">
+          <div class="search-row">
+            <input type="text" id="geoSearch" placeholder="Zoek adres of plaatsnaam…">
+            <button class="btn btn-ghost btn-sm" id="geoSearchBtn">Zoek</button>
+          </div>
+          <div id="geocodeResults"></div>
+          <button class="btn btn-ghost btn-sm" id="pickOnMapBtn" type="button">Of kies locatie op de kaart</button>
 
-        <span class="time-label">Opstijgen</span>
-        <div class="two-col">
-          <input type="text" id="flightDepPlace" placeholder="Vertrekluchthaven (bv. Brussel BRU)">
-          <input type="date" id="flightDepDate">
+          <input type="text" id="placeName" placeholder="Naam van de plek">
+          <select id="placeCategory"></select>
+          <textarea id="placeNotes" placeholder="Notities (bv. reserveren nodig, parkeertip, beste tijdstip…)"></textarea>
+          <input type="url" id="placeWebsite" placeholder="Website (optioneel, bv. https://...)">
+          <label style="display:block; font-size:11px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.06em;">Tijdstip (optioneel, bv. voor reservaties)</label>
+          <div class="time-row">
+            <select id="placeTimeHour"></select>
+            <span class="colon">:</span>
+            <select id="placeTimeMin"></select>
+          </div>
+          <label style="display:block; font-size:11px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.06em; margin-top:8px;">Foto (optioneel)
+            <input type="file" id="placeAttachment" accept="image/*" style="margin-top:4px; display:block; font-size:12.5px;">
+          </label>
+          <button class="btn btn-primary btn-block" id="addPlaceBtn">Plek opslaan</button>
         </div>
-        <div class="time-row">
-          <select id="flightDepHour"></select>
-          <span class="colon">:</span>
-          <select id="flightDepMin"></select>
-        </div>
+      </div>
 
-        <span class="time-label" style="margin-top:6px;">Landen</span>
-        <div class="two-col">
-          <input type="text" id="flightArrPlace" placeholder="Aankomstluchthaven (bv. Ibiza IBZ)">
-          <input type="date" id="flightArrDate">
-        </div>
-        <div class="time-row">
-          <select id="flightArrHour"></select>
-          <span class="colon">:</span>
-          <select id="flightArrMin"></select>
-        </div>
-
-        <label style="display:block; font-size:11px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.06em; margin-top:8px;">Bijlage (optioneel, bv. instapkaart of ticket)
-          <input type="file" id="flightAttachment" accept="image/*,application/pdf" style="margin-top:4px; display:block; font-size:12.5px;">
-        </label>
-        <div id="flightAttachmentCurrent" style="font-size:12px; color:var(--ink-soft); margin-top:4px;"></div>
-
-        <button class="btn btn-primary btn-block" id="addFlightBtn" style="margin-top:8px;">Vlucht opslaan</button>
-        <button class="btn btn-ghost btn-block" id="cancelFlightEditBtn" type="button" style="display:none; margin-top:6px;">Annuleer wijziging</button>
+      <div class="section" style="border-bottom:none; flex:1; display:flex; flex-direction:column; padding-bottom:0;">
+        <h2 id="listTitle">Alle plekken</h2>
+        <div id="categoryPlaceList"></div>
       </div>
     </div>
 
-    <div class="section">
-      <button class="section-toggle" id="togglePlaceForm" type="button">
-        <h2>Plek toevoegen</h2>
-        <span class="section-toggle-btn">+ Toevoegen</span>
-      </button>
-      <div class="add-form" id="placeFormWrap" style="display:none;">
-        <div class="search-row">
-          <input type="text" id="geoSearch" placeholder="Zoek adres of plaatsnaam op Ibiza…">
-          <button class="btn btn-ghost btn-sm" id="geoSearchBtn">Zoek</button>
-        </div>
-        <div id="geocodeResults"></div>
-        <button class="btn btn-ghost btn-sm" id="pickOnMapBtn" type="button">Of kies locatie op de kaart</button>
-
-        <input type="text" id="placeName" placeholder="Naam van de plek">
-        <select id="placeCategory"></select>
-        <textarea id="placeNotes" placeholder="Notities (bv. reserveren nodig, parkeertip, beste tijdstip…)"></textarea>
-        <input type="url" id="placeWebsite" placeholder="Website (optioneel, bv. https://...)">
-        <label style="display:block; font-size:11px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.06em;">Tijdstip (optioneel, bv. voor reservaties)</label>
-        <div class="time-row">
-          <select id="placeTimeHour"></select>
-          <span class="colon">:</span>
-          <select id="placeTimeMin"></select>
-        </div>
-        <label style="display:block; font-size:11px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.06em; margin-top:8px;">Foto (optioneel)
-          <input type="file" id="placeAttachment" accept="image/*" style="margin-top:4px; display:block; font-size:12.5px;">
-        </label>
-        <button class="btn btn-primary btn-block" id="addPlaceBtn">Plek opslaan</button>
+    <!-- ============ AGENDA-tegel: kalender + vluchten ============ -->
+    <div id="agendaView" style="display:none;">
+      <div class="section" style="padding-bottom:8px;">
+        <button class="back-btn" id="backFromAgendaBtn" type="button">← Terug</button>
       </div>
-    </div>
 
-    <div class="section" style="border-bottom:none; flex:1; display:flex; flex-direction:column; padding-bottom:0;">
-      <div class="cat-tabs" id="catTabs"></div>
-      <h2 id="listTitle">Alle plekken</h2>
-      <div id="placeList"></div>
-    </div>
+      <div class="section">
+        <h2>Kalender</h2>
+        <div class="cal-grid" id="calGrid"></div>
+        <div class="cal-extra" id="calExtra"></div>
+        <h2 id="agendaListTitle" style="margin-top:14px; display:none;"></h2>
+        <div id="agendaPlaceList"></div>
+      </div>
 
-    <div class="footer-actions" style="flex-wrap:wrap; align-items:center;">
-      <button class="btn btn-ghost btn-sm" id="refreshBtn" title="Nieuwste plekken ophalen">↻ Ververs</button>
-      <button class="btn btn-ghost btn-sm" id="exportBtn">Exporteer JSON</button>
-      <button class="btn btn-ghost btn-sm" id="importBtn">Importeer JSON</button>
-      <input type="file" id="importFile" accept=".json" style="display:none;">
-      <button class="btn btn-ghost btn-sm" id="locateBtn" title="Centreer op mijn locatie">📍 Mijn locatie</button>
-      <span id="syncStatus" class="mono" style="font-size:11px; color:var(--ink-soft); margin-left:auto;"></span>
+      <div class="section" style="border-bottom:none;">
+        <button class="section-toggle" id="toggleFlightForm" type="button">
+          <h2>Vluchten</h2>
+          <span class="section-toggle-btn">+ Toevoegen</span>
+        </button>
+        <div id="flightList"></div>
+        <div class="add-form" id="flightFormWrap" style="display:none;">
+          <div class="two-col">
+            <input type="text" id="flightNumber" placeholder="Vluchtnummer">
+            <input type="text" id="flightAirline" placeholder="Maatschappij">
+          </div>
+
+          <span class="time-label">Opstijgen</span>
+          <div class="two-col">
+            <input type="text" id="flightDepPlace" placeholder="Vertrekluchthaven (bv. Brussel BRU)">
+            <input type="date" id="flightDepDate">
+          </div>
+          <div class="time-row">
+            <select id="flightDepHour"></select>
+            <span class="colon">:</span>
+            <select id="flightDepMin"></select>
+          </div>
+
+          <span class="time-label" style="margin-top:6px;">Landen</span>
+          <div class="two-col">
+            <input type="text" id="flightArrPlace" placeholder="Aankomstluchthaven (bv. Ibiza IBZ)">
+            <input type="date" id="flightArrDate">
+          </div>
+          <div class="time-row">
+            <select id="flightArrHour"></select>
+            <span class="colon">:</span>
+            <select id="flightArrMin"></select>
+          </div>
+
+          <label style="display:block; font-size:11px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.06em; margin-top:8px;">Bijlage (optioneel, bv. instapkaart of ticket)
+            <input type="file" id="flightAttachment" accept="image/*,application/pdf" style="margin-top:4px; display:block; font-size:12.5px;">
+          </label>
+          <div id="flightAttachmentCurrent" style="font-size:12px; color:var(--ink-soft); margin-top:4px;"></div>
+
+          <button class="btn btn-primary btn-block" id="addFlightBtn" style="margin-top:8px;">Vlucht opslaan</button>
+          <button class="btn btn-ghost btn-block" id="cancelFlightEditBtn" type="button" style="display:none; margin-top:6px;">Annuleer wijziging</button>
+        </div>
+      </div>
     </div>
 
   </div>
 
-  <div class="map-wrap">
+  <div class="map-wrap" style="display:none;">
     <div id="map"></div>
     <div class="map-pick-banner" id="mapPickBanner">
       <span>📍 Tik op de kaart om deze plek te plaatsen</span>
@@ -1223,60 +1255,102 @@ function renderFlights(){
 }
 
 /* ============ Category tabs (elke categorie = eigen blad) ============ */
-function renderCatTabs(){
-  const el = document.getElementById('catTabs');
-  if(state.activeDay > 0){
-    el.style.display = 'none';
-    el.innerHTML = '';
-    return;
-  }
-  el.style.display = '';
+/* ============ Home: tegels + navigatie tussen schermen ============ */
+const TILES = [
+  { key: 'strand',   icon: '🏖️', sub: 'Stranden & zwemplekken' },
+  { key: 'eten',     icon: '🍽️', sub: 'Restaurants & reservaties' },
+  { key: 'shopping', icon: '🛍️', sub: 'Winkels & markten' },
+  { key: 'andere',   icon: '📍', sub: 'Alle andere plekken' },
+];
+
+function renderTileGrid(){
+  const el = document.getElementById('tileGrid');
   el.innerHTML = '';
-  Object.entries(CATEGORIES).forEach(([key, val]) => {
-    const count = state.places.filter(p => p.category === key).length;
-    const active = state.activeCat === key;
-    const tab = document.createElement('div');
-    tab.className = 'cat-tab' + (active ? ' active' : '');
-    if(active) tab.style.color = val.color;
-    tab.innerHTML = `<span class="dot" style="background:${val.color}"></span>${val.label} (${count})`;
-    tab.addEventListener('click', () => {
-      state.activeCat = key;
-      renderAll();
+  TILES.forEach(t => {
+    const cat = CATEGORIES[t.key];
+    const count = state.places.filter(p => p.category === t.key).length;
+    const tile = document.createElement('button');
+    tile.type = 'button';
+    tile.className = 'tile';
+    tile.style.background = cat.color;
+    tile.innerHTML = `<span class="tile-icon">${t.icon}</span><span class="tile-title">${cat.label}</span><span class="tile-sub">${count} plek${count===1?'':'ken'}</span>`;
+    tile.addEventListener('click', () => {
+      state.activeCat = t.key;
+      showView('category');
     });
-    el.appendChild(tab);
+    el.appendChild(tile);
   });
+
+  const flightCount = state.flights.length;
+  const agendaTile = document.createElement('button');
+  agendaTile.type = 'button';
+  agendaTile.className = 'tile agenda';
+  agendaTile.innerHTML = `<span class="tile-icon">🗓️</span><span class="tile-title">Agenda</span><span class="tile-sub">Kalender & vluchten${flightCount ? ` (${flightCount})` : ''}</span>`;
+  agendaTile.addEventListener('click', () => showView('agenda'));
+  el.appendChild(agendaTile);
 }
+
+function showView(view){
+  document.getElementById('homeView').style.display = view === 'home' ? 'block' : 'none';
+  document.getElementById('categoryView').style.display = view === 'category' ? 'block' : 'none';
+  document.getElementById('agendaView').style.display = view === 'agenda' ? 'block' : 'none';
+  document.querySelector('.map-wrap').style.display = view === 'category' ? 'block' : 'none';
+  if(view === 'category'){
+    setTimeout(() => map.invalidateSize(), 50);
+  }
+  renderAll();
+}
+document.getElementById('backFromCategoryBtn').addEventListener('click', () => showView('home'));
+document.getElementById('backFromAgendaBtn').addEventListener('click', () => showView('home'));
 
 /* ============ Place list ============ */
 let editingPlaceId = null;
 
-function visiblePlaces(){
-  // Een specifieke dag aantikken toont alles wat die dag gepland staat,
-  // over alle categorieën heen — ongeacht welk categorie-tabblad actief is.
-  if(state.activeDay > 0){
-    return state.places.filter(p => p.day === state.activeDay).sort((a,b) => a.order - b.order);
-  }
+function categoryPlaces(){
   let list = state.places.filter(p => p.category === state.activeCat);
-  if(state.activeDay === -1){
-    list = list.filter(p => p.day === -1);
+  if(state.activeDay !== 0){
+    list = list.filter(p => p.day === state.activeDay);
   }
-  list.sort((a,b) => (b.favorite - a.favorite) || a.name.localeCompare(b.name));
+  if(state.activeDay > 0){
+    list.sort((a,b) => a.order - b.order);
+  } else {
+    list.sort((a,b) => (b.favorite - a.favorite) || a.name.localeCompare(b.name));
+  }
   return list;
+}
+function agendaDayPlaces(){
+  if(state.activeDay <= 0) return [];
+  return state.places.filter(p => p.day === state.activeDay).sort((a,b) => a.order - b.order);
 }
 
 function escapeAttr(str){
   return String(str).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
-function renderPlaceList(){
-  const el = document.getElementById('placeList');
+function renderCategoryPlaceList(){
   const titleEl = document.getElementById('listTitle');
-  const list = visiblePlaces();
-
-  if(state.activeDay > 0) titleEl.textContent = `${dayLabel(state.activeDay)} — alles ingepland (${list.length})`;
+  const list = categoryPlaces();
+  if(state.activeDay > 0) titleEl.textContent = `${CATEGORIES[state.activeCat].label} · ${dayLabel(state.activeDay)} (${list.length})`;
   else if(state.activeDay === -1) titleEl.textContent = `${CATEGORIES[state.activeCat].label} · Nog niet gepland (${list.length})`;
   else titleEl.textContent = `${CATEGORIES[state.activeCat].label} (${list.length})`;
+  renderPlaceListInto(document.getElementById('categoryPlaceList'), list);
+}
 
+function renderAgendaPlaceList(){
+  const titleEl = document.getElementById('agendaListTitle');
+  const el = document.getElementById('agendaPlaceList');
+  if(state.activeDay <= 0){
+    titleEl.style.display = 'none';
+    el.innerHTML = '';
+    return;
+  }
+  const list = agendaDayPlaces();
+  titleEl.style.display = 'block';
+  titleEl.textContent = `${dayLabel(state.activeDay)} — alles ingepland (${list.length})`;
+  renderPlaceListInto(el, list);
+}
+
+function renderPlaceListInto(el, list){
   el.innerHTML = '';
   if(!list.length){
     el.innerHTML = `<div class="place-card empty-state">Nog niks hier. Zoek hierboven een adres of kies een plek op de kaart.</div>`;
@@ -1367,12 +1441,12 @@ function renderPlaceList(){
   el.querySelectorAll('[data-edit]').forEach(btn => btn.addEventListener('click', (e) => {
     e.stopPropagation();
     editingPlaceId = btn.dataset.edit;
-    renderPlaceList();
+    renderPlaceListInto(el, list);
   }));
   el.querySelectorAll('[data-canceledit]').forEach(btn => btn.addEventListener('click', (e) => {
     e.stopPropagation();
     editingPlaceId = null;
-    renderPlaceList();
+    renderPlaceListInto(el, list);
   }));
   el.querySelectorAll('[data-save]').forEach(btn => btn.addEventListener('click', async (e) => {
     e.stopPropagation();
@@ -1496,7 +1570,7 @@ function escapeHtml(str){
 /* ============ Markers ============ */
 function renderMarkers(){
   markersLayer.clearLayers();
-  const list = visiblePlaces();
+  const list = categoryPlaces();
   list.forEach((p, idx) => {
     const icon = state.activeDay > 0 ? numberedIcon(idx+1, p.category) : catIcon(p.category);
     const marker = L.marker([p.lat, p.lng], { icon }).addTo(markersLayer);
@@ -1558,10 +1632,11 @@ document.getElementById('locateBtn').addEventListener('click', () => {
 
 /* ============ Render orchestration ============ */
 function renderAll(){
+  renderTileGrid();
   renderCalendar();
   renderFlights();
-  renderCatTabs();
-  renderPlaceList();
+  renderCategoryPlaceList();
+  renderAgendaPlaceList();
   renderMarkers();
 }
 
