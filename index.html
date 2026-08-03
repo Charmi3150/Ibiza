@@ -155,7 +155,9 @@
   .tile .tile-icon{ font-size:26px; line-height:1; }
   .tile .tile-title{ font-family:'Inter',sans-serif; font-weight:700; font-size:14.5px; }
   .tile .tile-sub{ font-size:11.5px; opacity:.75; }
-  .tile.agenda{ background:var(--clay); }
+  .tile.agenda{ background:#5B8C5A; }
+  .tile.dark-text{ color:var(--ink); }
+  .tile.dark-text .tile-sub{ opacity:.65; }
 
   /* back button */
   .back-btn{
@@ -647,10 +649,10 @@ if(typeof L === 'undefined'){
 }
 /* ============ Config ============ */
 const CATEGORIES = {
-  strand:      { label: 'Strand',   color: '#63B17D' },
-  eten:        { label: 'Eten',     color: '#EA564C' },
-  shopping:    { label: 'Shopping', color: '#C97B86' },
-  andere:      { label: 'Andere',   color: '#4A2224' },
+  strand:      { label: 'Strand',   color: '#E3B23C' },
+  eten:        { label: 'Eten',     color: '#A97C56' },
+  shopping:    { label: 'Shopping', color: '#3B241C' },
+  andere:      { label: 'Andere',   color: '#E8AFC0' },
 };
 // Standaardwaarden — worden bij het laden overschreven door de
 // reisinstellingen uit Supabase, zodat de tool voor elke reis herbruikt kan worden.
@@ -769,64 +771,82 @@ function showMapError(show){
   if(el) el.classList.toggle('show', !!show);
 }
 
-const map = L.map('map', { zoomControl: true }).setView(mapCenter, 11);
-
-// Canonieke tile-URL zonder lettersubdomeinen (a/b/c.tile... wordt afgeraden
-// door OSM en faalt soms op mobiel netwerk/Safari). Met een fallback-provider
-// (CARTO) mocht de primaire tegelserver even niet bereikbaar zijn.
-let usingFallbackTiles = false;
-let tileLoadOk = false;
-let tileErrorTimer = null;
-
-function buildTileLayer(url, attribution){
-  return L.tileLayer(url, { attribution, maxZoom: 19, crossOrigin: true });
-}
-
-let tileLayer = buildTileLayer(
-  'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-  '&copy; OpenStreetMap-bijdragers'
-).addTo(map);
-
-function switchToFallbackTiles(){
-  if(usingFallbackTiles) return;
-  usingFallbackTiles = true;
-  map.removeLayer(tileLayer);
-  tileLayer = buildTileLayer(
-    'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
-    '&copy; OpenStreetMap-bijdragers &copy; CARTO'
-  ).addTo(map);
-  tileLayer.on('load', () => { tileLoadOk = true; showMapError(false); });
-  tileLayer.on('tileerror', () => { if(!tileLoadOk) showMapError(true); });
-}
-
-tileLayer.on('load', () => { tileLoadOk = true; showMapError(false); clearTimeout(tileErrorTimer); });
-tileLayer.on('tileerror', () => { if(!tileLoadOk) switchToFallbackTiles(); });
-// Als er na 6s nog geen enkele tegel is binnengekomen (bv. stille netwerkfout
-// zonder 'tileerror' event op iOS), toon een duidelijke fout i.p.v. een lege kaart.
-tileErrorTimer = setTimeout(() => { if(!tileLoadOk) showMapError(true); }, 6000);
-
-document.getElementById('mapRetryBtn')?.addEventListener('click', () => {
-  showMapError(false);
-  tileLoadOk = false;
-  tileLayer.redraw();
-  clearTimeout(tileErrorTimer);
-  tileErrorTimer = setTimeout(() => { if(!tileLoadOk) switchToFallbackTiles(); }, 6000);
-});
-
-let markersLayer = L.layerGroup().addTo(map);
+// Als Leaflet (de kaartbibliotheek) om welke reden dan ook niet beschikbaar is
+// (netwerkfout, CDN geblokkeerd door een preview-tool, ...), zorgen we ervoor
+// dat de rest van de app — tegels, formulieren, lijsten — gewoon blijft werken.
+// Zonder deze vangnet crasht anders het hele script op deze regel, en werkt
+// zelfs geen enkele knop meer.
+let map, markersLayer;
 let pickModeActive = false;
 
-// iOS Safari verandert de viewport-hoogte wanneer de adresbalk in-/uitschuift,
-// zonder altijd een 'resize' event te vuren op window. Daarom ook luisteren op
-// visualViewport en een ResizeObserver op de kaart-container zelf.
-function refreshMapSize(){ map.invalidateSize(); }
-window.addEventListener('resize', refreshMapSize);
-if(window.visualViewport) window.visualViewport.addEventListener('resize', refreshMapSize);
-if(window.ResizeObserver){
-  new ResizeObserver(refreshMapSize).observe(document.querySelector('.map-wrap'));
+try{
+  if(typeof L === 'undefined') throw new Error('Leaflet is niet geladen');
+
+  map = L.map('map', { zoomControl: true }).setView(mapCenter, 11);
+
+  // Canonieke tile-URL zonder lettersubdomeinen (a/b/c.tile... wordt afgeraden
+  // door OSM en faalt soms op mobiel netwerk/Safari). Met een fallback-provider
+  // (CARTO) mocht de primaire tegelserver even niet bereikbaar zijn.
+  let usingFallbackTiles = false;
+  let tileLoadOk = false;
+  let tileErrorTimer = null;
+
+  const buildTileLayer = (url, attribution) => L.tileLayer(url, { attribution, maxZoom: 19, crossOrigin: true });
+
+  let tileLayer = buildTileLayer(
+    'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+    '&copy; OpenStreetMap-bijdragers'
+  ).addTo(map);
+
+  const switchToFallbackTiles = () => {
+    if(usingFallbackTiles) return;
+    usingFallbackTiles = true;
+    map.removeLayer(tileLayer);
+    tileLayer = buildTileLayer(
+      'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',
+      '&copy; OpenStreetMap-bijdragers &copy; CARTO'
+    ).addTo(map);
+    tileLayer.on('load', () => { tileLoadOk = true; showMapError(false); });
+    tileLayer.on('tileerror', () => { if(!tileLoadOk) showMapError(true); });
+  };
+
+  tileLayer.on('load', () => { tileLoadOk = true; showMapError(false); clearTimeout(tileErrorTimer); });
+  tileLayer.on('tileerror', () => { if(!tileLoadOk) switchToFallbackTiles(); });
+  // Als er na 6s nog geen enkele tegel is binnengekomen (bv. stille netwerkfout
+  // zonder 'tileerror' event op iOS), toon een duidelijke fout i.p.v. een lege kaart.
+  tileErrorTimer = setTimeout(() => { if(!tileLoadOk) showMapError(true); }, 6000);
+
+  document.getElementById('mapRetryBtn')?.addEventListener('click', () => {
+    showMapError(false);
+    tileLoadOk = false;
+    tileLayer.redraw();
+    clearTimeout(tileErrorTimer);
+    tileErrorTimer = setTimeout(() => { if(!tileLoadOk) switchToFallbackTiles(); }, 6000);
+  });
+
+  markersLayer = L.layerGroup().addTo(map);
+
+  // iOS Safari verandert de viewport-hoogte wanneer de adresbalk in-/uitschuift,
+  // zonder altijd een 'resize' event te vuren op window. Daarom ook luisteren op
+  // visualViewport en een ResizeObserver op de kaart-container zelf.
+  const refreshMapSize = () => map.invalidateSize();
+  window.addEventListener('resize', refreshMapSize);
+  if(window.visualViewport) window.visualViewport.addEventListener('resize', refreshMapSize);
+  if(window.ResizeObserver){
+    new ResizeObserver(refreshMapSize).observe(document.querySelector('.map-wrap'));
+  }
+  [100, 400, 1000].forEach(ms => setTimeout(refreshMapSize, ms));
+  document.addEventListener('visibilitychange', () => { if(!document.hidden) refreshMapSize(); });
+
+}catch(err){
+  console.error('Kaart kon niet initialiseren:', err);
+  showToast('De kaart kon niet geladen worden — de rest van de app blijft gewoon werken.', true);
+  const noop = () => {};
+  map = { setView: noop, invalidateSize: noop, removeLayer: noop, on: noop, fitBounds: noop };
+  markersLayer = { clearLayers: noop, addTo(){ return this; } };
+  document.getElementById('mapRetryBtn')?.addEventListener('click', () => location.reload());
+  showMapError(true);
 }
-[100, 400, 1000].forEach(ms => setTimeout(refreshMapSize, ms));
-document.addEventListener('visibilitychange', () => { if(!document.hidden) refreshMapSize(); });
 
 map.on('click', (e) => {
   if(!pickModeActive) return;
@@ -1257,10 +1277,10 @@ function renderFlights(){
 /* ============ Category tabs (elke categorie = eigen blad) ============ */
 /* ============ Home: tegels + navigatie tussen schermen ============ */
 const TILES = [
-  { key: 'strand',   icon: '🏖️', sub: 'Stranden & zwemplekken' },
+  { key: 'strand',   icon: '🏖️', sub: 'Stranden & zwemplekken', dark: true },
   { key: 'eten',     icon: '🍽️', sub: 'Restaurants & reservaties' },
   { key: 'shopping', icon: '🛍️', sub: 'Winkels & markten' },
-  { key: 'andere',   icon: '📍', sub: 'Alle andere plekken' },
+  { key: 'andere',   icon: '📍', sub: 'Alle andere plekken', dark: true },
 ];
 
 function renderTileGrid(){
@@ -1271,7 +1291,7 @@ function renderTileGrid(){
     const count = state.places.filter(p => p.category === t.key).length;
     const tile = document.createElement('button');
     tile.type = 'button';
-    tile.className = 'tile';
+    tile.className = 'tile' + (t.dark ? ' dark-text' : '');
     tile.style.background = cat.color;
     tile.innerHTML = `<span class="tile-icon">${t.icon}</span><span class="tile-title">${cat.label}</span><span class="tile-sub">${count} plek${count===1?'':'ken'}</span>`;
     tile.addEventListener('click', () => {
@@ -1289,12 +1309,14 @@ function renderTileGrid(){
   el.appendChild(agendaTile);
 }
 
+let currentView = 'home';
 function showView(view){
+  currentView = view;
   document.getElementById('homeView').style.display = view === 'home' ? 'block' : 'none';
   document.getElementById('categoryView').style.display = view === 'category' ? 'block' : 'none';
   document.getElementById('agendaView').style.display = view === 'agenda' ? 'block' : 'none';
-  document.querySelector('.map-wrap').style.display = view === 'category' ? 'block' : 'none';
-  if(view === 'category'){
+  document.querySelector('.map-wrap').style.display = (view === 'category' || view === 'agenda') ? 'block' : 'none';
+  if(view === 'category' || view === 'agenda'){
     setTimeout(() => map.invalidateSize(), 50);
   }
   renderAll();
@@ -1306,19 +1328,15 @@ document.getElementById('backFromAgendaBtn').addEventListener('click', () => sho
 let editingPlaceId = null;
 
 function categoryPlaces(){
-  let list = state.places.filter(p => p.category === state.activeCat);
-  if(state.activeDay !== 0){
-    list = list.filter(p => p.day === state.activeDay);
-  }
-  if(state.activeDay > 0){
-    list.sort((a,b) => a.order - b.order);
-  } else {
-    list.sort((a,b) => (b.favorite - a.favorite) || a.name.localeCompare(b.name));
-  }
-  return list;
+  return state.places
+    .filter(p => p.category === state.activeCat)
+    .sort((a,b) => (b.favorite - a.favorite) || a.name.localeCompare(b.name));
 }
 function agendaDayPlaces(){
-  if(state.activeDay <= 0) return [];
+  if(state.activeDay === 0) return [];
+  if(state.activeDay === -1){
+    return state.places.filter(p => p.day === -1).sort((a,b) => a.name.localeCompare(b.name));
+  }
   return state.places.filter(p => p.day === state.activeDay).sort((a,b) => a.order - b.order);
 }
 
@@ -1329,27 +1347,27 @@ function escapeAttr(str){
 function renderCategoryPlaceList(){
   const titleEl = document.getElementById('listTitle');
   const list = categoryPlaces();
-  if(state.activeDay > 0) titleEl.textContent = `${CATEGORIES[state.activeCat].label} · ${dayLabel(state.activeDay)} (${list.length})`;
-  else if(state.activeDay === -1) titleEl.textContent = `${CATEGORIES[state.activeCat].label} · Nog niet gepland (${list.length})`;
-  else titleEl.textContent = `${CATEGORIES[state.activeCat].label} (${list.length})`;
-  renderPlaceListInto(document.getElementById('categoryPlaceList'), list);
+  titleEl.textContent = `${CATEGORIES[state.activeCat].label} (${list.length})`;
+  renderPlaceListInto(document.getElementById('categoryPlaceList'), list, false);
 }
 
 function renderAgendaPlaceList(){
   const titleEl = document.getElementById('agendaListTitle');
   const el = document.getElementById('agendaPlaceList');
-  if(state.activeDay <= 0){
+  if(state.activeDay === 0){
     titleEl.style.display = 'none';
     el.innerHTML = '';
     return;
   }
   const list = agendaDayPlaces();
   titleEl.style.display = 'block';
-  titleEl.textContent = `${dayLabel(state.activeDay)} — alles ingepland (${list.length})`;
-  renderPlaceListInto(el, list);
+  titleEl.textContent = state.activeDay === -1
+    ? `Nog niet gepland (${list.length})`
+    : `${dayLabel(state.activeDay)} — alles ingepland (${list.length})`;
+  renderPlaceListInto(el, list, state.activeDay > 0);
 }
 
-function renderPlaceListInto(el, list){
+function renderPlaceListInto(el, list, dayMode){
   el.innerHTML = '';
   if(!list.length){
     el.innerHTML = `<div class="place-card empty-state">Nog niks hier. Zoek hierboven een adres of kies een plek op de kaart.</div>`;
@@ -1400,7 +1418,7 @@ function renderPlaceListInto(el, list){
     card.innerHTML = `
       <div class="row1">
         <div style="display:flex; align-items:center; gap:8px;">
-          ${state.activeDay > 0 ? `<span class="order-badge">${idx+1}</span>` : ''}
+          ${dayMode ? `<span class="order-badge">${idx+1}</span>` : ''}
           <span class="cat-badge" style="background:${cat.color}">${cat.label}</span>
         </div>
         <div>
@@ -1414,7 +1432,7 @@ function renderPlaceListInto(el, list){
       <div class="meta">
         <select data-catselect="${p.id}">${catOptions.join('')}</select>
         <select data-dayselect="${p.id}">${dayOptions.join('')}</select>
-        ${state.activeDay > 0 ? `<div class="move-btns">
+        ${dayMode ? `<div class="move-btns">
             <button data-up="${p.id}">↑</button>
             <button data-down="${p.id}">↓</button>
           </div>` : ''}
@@ -1440,12 +1458,12 @@ function renderPlaceListInto(el, list){
   el.querySelectorAll('[data-edit]').forEach(btn => btn.addEventListener('click', (e) => {
     e.stopPropagation();
     editingPlaceId = btn.dataset.edit;
-    renderPlaceListInto(el, list);
+    renderPlaceListInto(el, list, dayMode);
   }));
   el.querySelectorAll('[data-canceledit]').forEach(btn => btn.addEventListener('click', (e) => {
     e.stopPropagation();
     editingPlaceId = null;
-    renderPlaceListInto(el, list);
+    renderPlaceListInto(el, list, dayMode);
   }));
   el.querySelectorAll('[data-save]').forEach(btn => btn.addEventListener('click', async (e) => {
     e.stopPropagation();
@@ -1569,13 +1587,16 @@ function escapeHtml(str){
 /* ============ Markers ============ */
 function renderMarkers(){
   markersLayer.clearLayers();
-  const list = categoryPlaces();
+  const dayMode = currentView === 'agenda' && state.activeDay > 0;
+  const list = currentView === 'agenda'
+    ? (state.activeDay === 0 ? state.places.slice() : agendaDayPlaces())
+    : categoryPlaces();
   list.forEach((p, idx) => {
-    const icon = state.activeDay > 0 ? numberedIcon(idx+1, p.category) : catIcon(p.category);
+    const icon = dayMode ? numberedIcon(idx+1, p.category) : catIcon(p.category);
     const marker = L.marker([p.lat, p.lng], { icon }).addTo(markersLayer);
     marker.bindPopup(`<h4>${escapeHtml(p.name)}</h4>${p.time ? `<div style="color:#EA564C;font-size:11px;font-weight:600;">🕒 ${escapeHtml(p.time)}</div>` : ''}${p.notes ? `<div>${escapeHtml(p.notes)}</div>` : ''}<div style="margin-top:4px;color:#888;font-size:11px;">${CATEGORIES[p.category].label}</div>${p.website ? `<a href="${escapeAttr(p.website)}" target="_blank" rel="noopener" style="display:block;margin-top:4px;font-size:12px;font-weight:600;color:#C97B86;">🔗 Website</a>` : ''}<a href="https://waze.com/ul?ll=${p.lat},${p.lng}&navigate=yes" target="_blank" rel="noopener" style="display:inline-block;margin-top:6px;font-size:12px;font-weight:600;color:#EA564C;">🧭 Navigeer in Waze</a>`);
   });
-  if(state.activeDay > 0 && list.length > 1){
+  if(dayMode && list.length > 1){
     const line = L.polyline(list.map(p => [p.lat, p.lng]), { color: '#4A2224', weight: 2, dashArray: '6 6', opacity: .6 });
     line.addTo(markersLayer);
   }
