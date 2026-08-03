@@ -155,7 +155,7 @@
   .tile .tile-icon{ font-size:26px; line-height:1; }
   .tile .tile-title{ font-family:'Inter',sans-serif; font-weight:700; font-size:14.5px; }
   .tile .tile-sub{ font-size:11.5px; opacity:.75; }
-  .tile.agenda{ background:#5B8C5A; }
+  .tile.agenda{ background:#9DD5AB; }
   .tile.dark-text{ color:var(--ink); }
   .tile.dark-text .tile-sub{ opacity:.65; }
 
@@ -472,7 +472,7 @@
           <span class="time-label" style="margin-top:6px;">Reisperiode</span>
           <div class="two-col">
             <input type="date" id="tripStartInput">
-            <input type="number" id="tripDaysInput" min="1" max="60" placeholder="Aantal dagen">
+            <input type="date" id="tripEndInput">
           </div>
           <button class="btn btn-primary btn-block" id="saveTripSettingsBtn" type="button" style="margin-top:8px;">Reisinstellingen opslaan</button>
         </div>
@@ -649,10 +649,10 @@ if(typeof L === 'undefined'){
 }
 /* ============ Config ============ */
 const CATEGORIES = {
-  strand:      { label: 'Strand',   color: '#E3B23C' },
-  eten:        { label: 'Eten',     color: '#A97C56' },
+  strand:      { label: 'Strand',   color: '#F9E9B5' },
+  eten:        { label: 'Eten',     color: '#D1F9FC' },
   shopping:    { label: 'Shopping', color: '#3B241C' },
-  andere:      { label: 'Andere',   color: '#E8AFC0' },
+  andere:      { label: 'Andere',   color: '#C81853' },
 };
 // Standaardwaarden — worden bij het laden overschreven door de
 // reisinstellingen uit Supabase, zodat de tool voor elke reis herbruikt kan worden.
@@ -1278,9 +1278,9 @@ function renderFlights(){
 /* ============ Home: tegels + navigatie tussen schermen ============ */
 const TILES = [
   { key: 'strand',   icon: '🏖️', sub: 'Stranden & zwemplekken', dark: true },
-  { key: 'eten',     icon: '🍽️', sub: 'Restaurants & reservaties' },
+  { key: 'eten',     icon: '🍽️', sub: 'Restaurants & reservaties', dark: true },
   { key: 'shopping', icon: '🛍️', sub: 'Winkels & markten' },
-  { key: 'andere',   icon: '📍', sub: 'Alle andere plekken', dark: true },
+  { key: 'andere',   icon: '📍', sub: 'Alle andere plekken' },
 ];
 
 function renderTileGrid(){
@@ -1303,7 +1303,7 @@ function renderTileGrid(){
 
   const agendaTile = document.createElement('button');
   agendaTile.type = 'button';
-  agendaTile.className = 'tile agenda';
+  agendaTile.className = 'tile agenda dark-text';
   agendaTile.innerHTML = `<span class="tile-icon">🗓️</span><span class="tile-title">Agenda</span><span class="tile-sub">Dagindeling per dag</span>`;
   agendaTile.addEventListener('click', () => showView('agenda'));
   el.appendChild(agendaTile);
@@ -1663,13 +1663,17 @@ function renderAll(){
 /* ============ Trip settings (bestemming, kaart-centrum, reisperiode) ============ */
 let pendingTripCenter = null;
 
+function toISODate(d){
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
 document.getElementById('toggleTripSettings').addEventListener('click', () => {
   const wrap = document.getElementById('tripSettingsFormWrap');
   const isOpen = wrap.style.display !== 'none';
   if(!isOpen){
     document.getElementById('tripDestinationInput').value = tripDestination;
     document.getElementById('tripStartInput').value = TRIP_START;
-    document.getElementById('tripDaysInput').value = TRIP_DAYS;
+    document.getElementById('tripEndInput').value = toISODate(dateForDay(TRIP_DAYS));
     pendingTripCenter = null;
     document.getElementById('tripLocationResults').innerHTML = '';
     document.getElementById('tripLocationSearch').value = '';
@@ -1715,10 +1719,16 @@ document.getElementById('tripLocationSearch').addEventListener('keydown', (e) =>
 document.getElementById('saveTripSettingsBtn').addEventListener('click', async () => {
   const destination = document.getElementById('tripDestinationInput').value.trim();
   const startDate = document.getElementById('tripStartInput').value;
-  const days = Math.max(1, parseInt(document.getElementById('tripDaysInput').value, 10) || 1);
+  const endDate = document.getElementById('tripEndInput').value;
 
   if(!destination){ showToast('Geef een bestemming op.', true); return; }
   if(!startDate){ showToast('Kies een startdatum.', true); return; }
+  if(!endDate){ showToast('Kies een einddatum.', true); return; }
+
+  const start = new Date(startDate + 'T00:00:00');
+  const end = new Date(endDate + 'T00:00:00');
+  if(end < start){ showToast('De einddatum ligt vóór de startdatum.', true); return; }
+  const days = Math.round((end - start) / 86400000) + 1;
 
   const btn = document.getElementById('saveTripSettingsBtn');
   btn.disabled = true; btn.textContent = 'Opslaan…';
