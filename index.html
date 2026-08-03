@@ -408,8 +408,52 @@
 
   <div id="sidebar">
 
-    <!-- ============ HOME: reis + tegels ============ -->
+    <!-- ============ HOME: vluchten + reis + tegels ============ -->
     <div id="homeView">
+      <div class="section">
+        <button class="section-toggle" id="toggleFlightForm" type="button">
+          <h2>Vluchten</h2>
+          <span class="section-toggle-btn">+ Toevoegen</span>
+        </button>
+        <div id="flightList"></div>
+        <div class="add-form" id="flightFormWrap" style="display:none;">
+          <div class="two-col">
+            <input type="text" id="flightNumber" placeholder="Vluchtnummer">
+            <input type="text" id="flightAirline" placeholder="Maatschappij">
+          </div>
+
+          <span class="time-label">Opstijgen</span>
+          <div class="two-col">
+            <input type="text" id="flightDepPlace" placeholder="Vertrekluchthaven (bv. Brussel BRU)">
+            <input type="date" id="flightDepDate">
+          </div>
+          <div class="time-row">
+            <select id="flightDepHour"></select>
+            <span class="colon">:</span>
+            <select id="flightDepMin"></select>
+          </div>
+
+          <span class="time-label" style="margin-top:6px;">Landen</span>
+          <div class="two-col">
+            <input type="text" id="flightArrPlace" placeholder="Aankomstluchthaven (bv. Ibiza IBZ)">
+            <input type="date" id="flightArrDate">
+          </div>
+          <div class="time-row">
+            <select id="flightArrHour"></select>
+            <span class="colon">:</span>
+            <select id="flightArrMin"></select>
+          </div>
+
+          <label style="display:block; font-size:11px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.06em; margin-top:8px;">Bijlage (optioneel, bv. instapkaart of ticket)
+            <input type="file" id="flightAttachment" accept="image/*,application/pdf" style="margin-top:4px; display:block; font-size:12.5px;">
+          </label>
+          <div id="flightAttachmentCurrent" style="font-size:12px; color:var(--ink-soft); margin-top:4px;"></div>
+
+          <button class="btn btn-primary btn-block" id="addFlightBtn" style="margin-top:8px;">Vlucht opslaan</button>
+          <button class="btn btn-ghost btn-block" id="cancelFlightEditBtn" type="button" style="display:none; margin-top:6px;">Annuleer wijziging</button>
+        </div>
+      </div>
+
       <div class="section">
         <button class="section-toggle" id="toggleTripSettings" type="button">
           <h2>Reis</h2>
@@ -488,62 +532,18 @@
       </div>
     </div>
 
-    <!-- ============ AGENDA-tegel: kalender + vluchten ============ -->
+    <!-- ============ AGENDA-tegel: kalender ============ -->
     <div id="agendaView" style="display:none;">
       <div class="section" style="padding-bottom:8px;">
         <button class="back-btn" id="backFromAgendaBtn" type="button">← Terug</button>
       </div>
 
-      <div class="section">
+      <div class="section" style="border-bottom:none;">
         <h2>Kalender</h2>
         <div class="cal-grid" id="calGrid"></div>
         <div class="cal-extra" id="calExtra"></div>
         <h2 id="agendaListTitle" style="margin-top:14px; display:none;"></h2>
         <div id="agendaPlaceList"></div>
-      </div>
-
-      <div class="section" style="border-bottom:none;">
-        <button class="section-toggle" id="toggleFlightForm" type="button">
-          <h2>Vluchten</h2>
-          <span class="section-toggle-btn">+ Toevoegen</span>
-        </button>
-        <div id="flightList"></div>
-        <div class="add-form" id="flightFormWrap" style="display:none;">
-          <div class="two-col">
-            <input type="text" id="flightNumber" placeholder="Vluchtnummer">
-            <input type="text" id="flightAirline" placeholder="Maatschappij">
-          </div>
-
-          <span class="time-label">Opstijgen</span>
-          <div class="two-col">
-            <input type="text" id="flightDepPlace" placeholder="Vertrekluchthaven (bv. Brussel BRU)">
-            <input type="date" id="flightDepDate">
-          </div>
-          <div class="time-row">
-            <select id="flightDepHour"></select>
-            <span class="colon">:</span>
-            <select id="flightDepMin"></select>
-          </div>
-
-          <span class="time-label" style="margin-top:6px;">Landen</span>
-          <div class="two-col">
-            <input type="text" id="flightArrPlace" placeholder="Aankomstluchthaven (bv. Ibiza IBZ)">
-            <input type="date" id="flightArrDate">
-          </div>
-          <div class="time-row">
-            <select id="flightArrHour"></select>
-            <span class="colon">:</span>
-            <select id="flightArrMin"></select>
-          </div>
-
-          <label style="display:block; font-size:11px; color:var(--ink-soft); text-transform:uppercase; letter-spacing:.06em; margin-top:8px;">Bijlage (optioneel, bv. instapkaart of ticket)
-            <input type="file" id="flightAttachment" accept="image/*,application/pdf" style="margin-top:4px; display:block; font-size:12.5px;">
-          </label>
-          <div id="flightAttachmentCurrent" style="font-size:12px; color:var(--ink-soft); margin-top:4px;"></div>
-
-          <button class="btn btn-primary btn-block" id="addFlightBtn" style="margin-top:8px;">Vlucht opslaan</button>
-          <button class="btn btn-ghost btn-block" id="cancelFlightEditBtn" type="button" style="display:none; margin-top:6px;">Annuleer wijziging</button>
-        </div>
       </div>
     </div>
 
@@ -1281,11 +1281,10 @@ function renderTileGrid(){
     el.appendChild(tile);
   });
 
-  const flightCount = state.flights.length;
   const agendaTile = document.createElement('button');
   agendaTile.type = 'button';
   agendaTile.className = 'tile agenda';
-  agendaTile.innerHTML = `<span class="tile-icon">🗓️</span><span class="tile-title">Agenda</span><span class="tile-sub">Kalender & vluchten${flightCount ? ` (${flightCount})` : ''}</span>`;
+  agendaTile.innerHTML = `<span class="tile-icon">🗓️</span><span class="tile-title">Agenda</span><span class="tile-sub">Dagindeling per dag</span>`;
   agendaTile.addEventListener('click', () => showView('agenda'));
   el.appendChild(agendaTile);
 }
