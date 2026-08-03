@@ -238,7 +238,7 @@
   .place-card .row1 > div:last-child{ display:flex; gap:1px; flex-shrink:0; }
   .place-card .cat-badge{
     font-size:10.5px; text-transform:uppercase; letter-spacing:.06em;
-    padding:2px 8px; border-radius:999px; color:#fff; font-weight:600;
+    padding:2px 8px; border-radius:999px; font-weight:600;
     white-space:nowrap;
   }
   .place-card h3{ margin:6px 0 2px; font-size:16px; font-weight:600; }
@@ -649,10 +649,10 @@ if(typeof L === 'undefined'){
 }
 /* ============ Config ============ */
 const CATEGORIES = {
-  strand:      { label: 'Strand',   color: '#F9E9B5' },
-  eten:        { label: 'Eten',     color: '#D1F9FC' },
-  shopping:    { label: 'Shopping', color: '#3B241C' },
-  andere:      { label: 'Andere',   color: '#C81853' },
+  strand:      { label: 'Strand',   color: '#F9E9B5', text: '#3B241C' },
+  eten:        { label: 'Eten',     color: '#D1F9FC', text: '#3B241C' },
+  shopping:    { label: 'Shopping', color: '#3B241C', text: '#fff' },
+  andere:      { label: 'Andere',   color: '#C81853', text: '#fff' },
 };
 // Standaardwaarden — worden bij het laden overschreven door de
 // reisinstellingen uit Supabase, zodat de tool voor elke reis herbruikt kan worden.
@@ -1419,7 +1419,7 @@ function renderPlaceListInto(el, list, dayMode){
       <div class="row1">
         <div style="display:flex; align-items:center; gap:8px;">
           ${dayMode ? `<span class="order-badge">${idx+1}</span>` : ''}
-          <span class="cat-badge" style="background:${cat.color}">${cat.label}</span>
+          <span class="cat-badge" style="background:${cat.color}; color:${cat.text}">${cat.label}</span>
         </div>
         <div>
           <button class="nav-btn" data-nav="${p.id}" title="Navigeer in Waze">🧭</button>
